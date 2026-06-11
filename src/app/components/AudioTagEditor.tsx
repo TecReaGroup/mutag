@@ -476,7 +476,7 @@ export function AudioTagEditor() {
       extraFields.find((f) => f.key === k)?.label ??
       k;
     return (
-      <div className="flex flex-col h-screen w-full bg-[#f6f8fa] text-[#1f2328] font-mono overflow-hidden">
+      <div className="flex flex-col h-screen w-full bg-[#f6f8fa] text-[#1f2328] font-mono overflow-hidden border-t border-[#d0d7de]">
         <div className={`${HEADER_H} px-4 flex items-center gap-2 border-b border-[#d0d7de] bg-white flex-shrink-0`}>
           <button
             onClick={() => setShowSettings(false)}
@@ -654,7 +654,7 @@ export function AudioTagEditor() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-[#f6f8fa] text-[#1f2328] font-mono overflow-hidden">
+    <div className="flex h-screen w-full bg-[#f6f8fa] text-[#1f2328] font-mono overflow-hidden border-t border-[#d0d7de]">
 
       {/* ── Left: File List ── */}
       <div className="flex-shrink-0 border-r-0 bg-white flex flex-col" style={{ width: leftW }}>
