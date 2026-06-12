@@ -1,8 +1,8 @@
 # mutag
 
-![home_screenshot](assets/screenshot/home_screenshot.png)
-
 ## Introduction
+
+![home_screenshot](assets/screenshot/home_screenshot.png)
 
 mutag 是一个跨平台的音频标签编辑桌面应用程序，基于 Electron + React 构建，提供直观的侧边对比界面来浏览、修改和管理音频文件的元数据。
 
