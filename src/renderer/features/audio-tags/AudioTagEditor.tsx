@@ -182,6 +182,29 @@ function AutoTextarea({ value, onChange, onFocus, onBlur, placeholder, className
   );
 }
 
+function SkeletonLine({ className = "" }: { className?: string }) {
+  return <div className={`rounded bg-[#d8dee4] ${className}`} />;
+}
+
+function FieldSkeletonRows() {
+  return (
+    <div className="p-4 space-y-3">
+      {Array.from({ length: 8 }).map((_, idx) => (
+        <div key={idx} className="flex gap-4 items-start">
+          <div className="flex-1 flex flex-col">
+            <SkeletonLine className="mb-1 h-3 w-20" />
+            <SkeletonLine className="h-9 w-full" />
+          </div>
+          <div className="flex-1 flex flex-col">
+            <SkeletonLine className="mb-1 h-3 w-24" />
+            <SkeletonLine className="h-9 w-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ResizeDivider({ onDrag, extend = "both" }: { onDrag: (dx: number) => void; extend?: "left" | "right" | "both" }) {
   const dragging = useRef(false);
   const lastX = useRef(0);
@@ -276,9 +299,12 @@ export function AudioTagEditor() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [projectRoot, setProjectRoot] = useState("");
   const [configLoaded, setConfigLoaded] = useState(false);
+  const [isScanning, setIsScanning] = useState(!import.meta.env.DEV);
   const projectSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const configSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const scanStartRef = useRef(0);
+  const MIN_SCAN_MS = 300;
 
   const selectedIndex = files.findIndex((f) => f.id === selectedId);
   const hasSelectedFile = selectedIndex >= 0;
@@ -370,6 +396,8 @@ export function AudioTagEditor() {
   const handleOpenFolder = useCallback(async () => {
     if (!window.audioTagApi) return;
 
+    setIsScanning(true);
+    scanStartRef.current = Date.now();
     try {
       const result = await window.audioTagApi.openFolder();
       if (!result) return;
@@ -377,14 +405,20 @@ export function AudioTagEditor() {
       applyProjectState(result, setFiles, setSelectedId, setExtraFields, setChatMessages);
     } catch (err) {
       window.alert(`Failed to open folder: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      const remaining = MIN_SCAN_MS - (Date.now() - scanStartRef.current);
+      if (remaining > 0) setTimeout(() => setIsScanning(false), remaining);
+      else setIsScanning(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!window.audioTagApi) { setConfigLoaded(true); return; }
+    if (!window.audioTagApi) { setConfigLoaded(true); setIsScanning(false); return; }
 
     let cancelled = false;
     const restore = async () => {
+      setIsScanning(true);
+      scanStartRef.current = Date.now();
       try {
         const config = await window.audioTagApi?.loadConfig();
         if (cancelled) return;
@@ -403,7 +437,12 @@ export function AudioTagEditor() {
       } catch (err) {
         console.warn("Failed to restore mutag state", err);
       } finally {
-        if (!cancelled) setConfigLoaded(true);
+        if (!cancelled) {
+          setConfigLoaded(true);
+          const remaining = MIN_SCAN_MS - (Date.now() - scanStartRef.current);
+          if (remaining > 0) setTimeout(() => setIsScanning(false), remaining);
+          else setIsScanning(false);
+        }
       }
     };
 
@@ -908,19 +947,32 @@ export function AudioTagEditor() {
           <span className="text-xs text-[#656d76] uppercase tracking-wider">Audio Files</span>
           <button
             onClick={handleOpenFolder}
+            disabled={isScanning}
             title="Open folder"
-            className="ml-auto flex items-center justify-center w-6 h-6 rounded text-[#656d76] hover:text-[#1f2328] hover:bg-[#f6f8fa] cursor-pointer transition-colors"
+            className="ml-auto flex items-center justify-center w-6 h-6 rounded text-[#656d76] hover:text-[#1f2328] hover:bg-[#f6f8fa] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
           >
             <FolderOpen size={14} />
           </button>
         </div>
         {/* Row 2 — aligns with middle's Original/Modified column header row */}
         <div className={`${HEADER_H} px-4 flex items-center border-b border-[#d0d7de] flex-shrink-0 bg-[#f6f8fa]`}>
-          <span className="text-[10px] text-[#8c959f] uppercase tracking-wider">{files.length} items</span>
+          <span className="text-[10px] text-[#8c959f] uppercase tracking-wider">{isScanning ? "scanning..." : `${files.length} items`}</span>
         </div>
 
         <div className="flex-1 overflow-y-auto thin-scrollbar py-1">
-          {files.map((f) => {
+          {isScanning ? (
+            <div className="space-y-1 px-3 py-2">
+              {Array.from({ length: 8 }).map((_, idx) => (
+                <div key={idx} className="flex items-start gap-2 py-2">
+                  <SkeletonLine className="mt-0.5 h-3 w-3 rounded-sm flex-shrink-0" />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <SkeletonLine className="h-3 w-4/5" />
+                    <SkeletonLine className="h-2 w-10" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : files.map((f) => {
             const isSelected = f.id === selectedId;
             const isDirty = (() => {
               if (!f.tempTags) return false;
@@ -988,8 +1040,17 @@ export function AudioTagEditor() {
         {/* Top bar — Row 1, HEADER_H to match side panels */}
         <div className={`${HEADER_H} px-5 border-b border-[#d0d7de] flex items-center gap-4 flex-shrink-0`}>
           <div className="min-w-0 flex-1 whitespace-nowrap truncate">
-            <span className="text-sm text-[#1f2328]">{selectedFile.name}</span>
-            <span className="ml-2 text-xs text-[#8c959f]">{selectedFile.path}</span>
+            {isScanning ? (
+              <div className="flex items-center gap-2">
+                <SkeletonLine className="h-4 w-48" />
+                <SkeletonLine className="h-3 w-64" />
+              </div>
+            ) : (
+              <>
+                <span className="text-sm text-[#1f2328]">{selectedFile.name}</span>
+                <span className="ml-2 text-xs text-[#8c959f]">{selectedFile.path}</span>
+              </>
+            )}
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
             {hasPendingChanges && (
@@ -1023,7 +1084,9 @@ export function AudioTagEditor() {
 
         {/* Synchronized field rows — scroll together */}
         <div className="flex-1 overflow-y-auto thin-scrollbar">
-          {hasSelectedFile ? (
+          {isScanning ? (
+            <FieldSkeletonRows />
+          ) : hasSelectedFile ? (
           <div className="p-4 space-y-3">
             {allFields.map(({ key, label }) => {
               const origVal = getTagValue(selectedFile.savedTags, key);
@@ -1157,7 +1220,7 @@ export function AudioTagEditor() {
           <div className="justify-self-start">
             <button
               onClick={goPrev}
-              disabled={!hasSelectedFile || selectedIndex === 0}
+              disabled={isScanning || !hasSelectedFile || selectedIndex === 0}
               className="flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft size={13} /> Prev
@@ -1166,7 +1229,7 @@ export function AudioTagEditor() {
           <div className="justify-self-center">
             <button
               onClick={saveFile}
-              disabled={!hasAnyChange}
+              disabled={isScanning || !hasAnyChange}
               className="flex items-center gap-1.5 px-4 py-1.5 text-xs rounded border border-[#1a7f37] bg-[#1f883d] text-white hover:bg-[#1a7f37] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Save size={13} /> Save
@@ -1175,7 +1238,7 @@ export function AudioTagEditor() {
           <div className="justify-self-end">
             <button
               onClick={goNext}
-              disabled={!hasSelectedFile || selectedIndex === files.length - 1}
+              disabled={isScanning || !hasSelectedFile || selectedIndex === files.length - 1}
               className="flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Next <ChevronRight size={13} />
@@ -1211,10 +1274,19 @@ export function AudioTagEditor() {
               <span className="text-[10px] text-[#8c959f] uppercase tracking-wider">{dirtyFiles.length} changed</span>
             </div>
             <div className="flex-1 overflow-y-auto thin-scrollbar py-1">
-              {dirtyFiles.length === 0 && (
+              {isScanning ? (
+                <div className="space-y-2 px-3 py-3">
+                  {Array.from({ length: 5 }).map((_, idx) => (
+                    <div key={idx} className="space-y-1.5">
+                      <SkeletonLine className="h-3 w-4/5" />
+                      <SkeletonLine className="h-2 w-1/2" />
+                    </div>
+                  ))}
+                </div>
+              ) : dirtyFiles.length === 0 && (
                 <div className="px-4 py-3 text-[10px] text-[#8c959f] italic">No pending changes</div>
               )}
-              {dirtyFiles.map((f) => {
+              {!isScanning && dirtyFiles.map((f) => {
                 const changes = buildFieldsForFile(f).filter(({ key }) => {
                   const orig = getTagValue(f.savedTags, key);
                   const edit = f.tempTags ? getTagValue(f.tempTags, key) : orig;
