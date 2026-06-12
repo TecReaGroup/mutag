@@ -270,6 +270,13 @@ function chunkFiles<T>(items: T[], size: number) {
   return chunks;
 }
 
+function fuzzyIncludes(value: string, query: string) {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = value.toLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+
 type SettledBatchResult<R> =
   | { ok: true; value: R }
   | { ok: false; error: unknown };
@@ -325,6 +332,7 @@ export function AudioTagEditor() {
   const [openAI, setOpenAI] = useState(DEFAULT_OPENAI);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
+  const [fileSearch, setFileSearch] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -353,6 +361,7 @@ export function AudioTagEditor() {
       )
     : false;
   const hasPendingChanges = hasAnyChange;
+  const visibleFiles = files.filter((f) => fuzzyIncludes(f.name, fileSearch));
 
   useEffect(() => {
     setIsAdding(false);
@@ -1041,8 +1050,17 @@ export function AudioTagEditor() {
           </button>
         </div>
         {/* Row 2 — aligns with middle's Original/Modified column header row */}
-        <div className={`${HEADER_H} px-4 flex items-center border-b border-[#d0d7de] flex-shrink-0 bg-[#f6f8fa]`}>
-          <span className="text-[10px] text-[#8c959f] uppercase tracking-wider">{isScanning ? "scanning..." : `${files.length} items`}</span>
+        <div className={`${HEADER_H} px-4 flex items-center gap-2 border-b border-[#d0d7de] flex-shrink-0 bg-[#f6f8fa]`}>
+          <span className="text-[10px] text-[#8c959f] uppercase tracking-wider flex-shrink-0">
+            {isScanning ? "scanning..." : `${visibleFiles.length}${fileSearch.trim() ? `/${files.length}` : ""} items`}
+          </span>
+          <input
+            value={fileSearch}
+            onChange={(e) => setFileSearch(e.target.value)}
+            disabled={isScanning}
+            placeholder="Search"
+            className="ml-auto min-w-0 flex-1 h-6 px-2 text-[11px] bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da] disabled:bg-[#f6f8fa] disabled:cursor-not-allowed"
+          />
         </div>
 
         <div className="flex-1 overflow-y-auto thin-scrollbar py-1">
@@ -1058,7 +1076,7 @@ export function AudioTagEditor() {
                 </div>
               ))}
             </div>
-          ) : files.map((f) => {
+          ) : visibleFiles.map((f) => {
             const isSelected = f.id === selectedId;
             const isDirty = (() => {
               if (!f.tempTags) return false;
