@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, FolderOpen, Settings, ArrowLeft, GripVertical, Undo2 } from "lucide-react";
 import type { AudioFile, AudioTag } from "@/shared/audio-tags";
 
-const INITIAL_FILES: AudioFile[] = [
+const DEMO_FILES: AudioFile[] = [
   {
     id: "1",
     name: "midnight_drive.mp3",
@@ -221,10 +221,12 @@ function ResizeDivider({ onDrag, extend = "both" }: { onDrag: (dx: number) => vo
 
 // Header row height shared across all three panels
 const HEADER_H = "h-10";
+const INITIAL_FILES = import.meta.env.DEV ? DEMO_FILES : [];
+const INITIAL_SELECTED_ID = import.meta.env.DEV ? "2" : "";
 
 export function AudioTagEditor() {
   const [files, setFiles] = useState<AudioFile[]>(INITIAL_FILES);
-  const [selectedId, setSelectedId] = useState<string>("2");
+  const [selectedId, setSelectedId] = useState<string>(INITIAL_SELECTED_ID);
   const [extraFields, setExtraFields] = useState<{ key: string; label: string }[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
