@@ -18,6 +18,7 @@ const AUDIO_EXTENSIONS = new Set([
   ".ogg",
   ".opus",
 ]);
+const MAX_AUDIO_SCAN_DEPTH = 5;
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -44,14 +45,23 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
 }
 
-async function walkAudioFiles(dir) {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
+async function walkAudioFiles(dir, depth = 1) {
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    console.warn(`Skipping unreadable directory: ${dir}`, error);
+    return [];
+  }
+
   const files = [];
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      files.push(...await walkAudioFiles(fullPath));
+      if (depth < MAX_AUDIO_SCAN_DEPTH) {
+        files.push(...await walkAudioFiles(fullPath, depth + 1));
+      }
       continue;
     }
     if (entry.isFile() && AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {

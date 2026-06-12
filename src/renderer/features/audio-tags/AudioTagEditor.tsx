@@ -248,12 +248,21 @@ export function AudioTagEditor() {
   const [chatError, setChatError] = useState<string | null>(null);
 
   const selectedIndex = files.findIndex((f) => f.id === selectedId);
-  const selectedFile = files[selectedIndex];
-  const effectiveTags: AudioTag = selectedFile.tempTags ?? { ...selectedFile.savedTags };
-  const hasAnyChange =
-    Object.keys({ ...effectiveTags, ...selectedFile.savedTags }).some(
-      (k) => getTagValue(effectiveTags, k) !== getTagValue(selectedFile.savedTags, k)
-    );
+  const hasSelectedFile = selectedIndex >= 0;
+  const selectedFile = files[selectedIndex] ?? {
+    id: "",
+    name: "No audio files found",
+    path: "Open a folder with supported audio files to start editing.",
+    savedTags: {} as AudioTag,
+    tempTags: null,
+    tempDeleted: [],
+  };
+  const effectiveTags: AudioTag = hasSelectedFile ? selectedFile.tempTags ?? { ...selectedFile.savedTags } : ({} as AudioTag);
+  const hasAnyChange = hasSelectedFile
+    ? Object.keys({ ...effectiveTags, ...selectedFile.savedTags }).some(
+        (k) => getTagValue(effectiveTags, k) !== getTagValue(selectedFile.savedTags, k)
+      )
+    : false;
   const hasPendingChanges = hasAnyChange;
 
   useEffect(() => {
@@ -272,9 +281,8 @@ export function AudioTagEditor() {
 
     try {
       const nextFiles = await window.audioTagApi.openFolder();
-      if (nextFiles.length === 0) return;
       setFiles(nextFiles);
-      setSelectedId(nextFiles[0].id);
+      setSelectedId(nextFiles[0]?.id ?? "");
       setExtraFields([]);
     } catch (err) {
       window.alert(`Failed to open folder: ${err instanceof Error ? err.message : String(err)}`);
@@ -457,7 +465,7 @@ export function AudioTagEditor() {
     }
   }, [chatInput, chatSending, chatMessages, files, openAI, applyChatChanges]);
 
-  const goNext = () => { if (selectedIndex < files.length - 1) setSelectedId(files[selectedIndex + 1].id); };
+  const goNext = () => { if (selectedIndex >= 0 && selectedIndex < files.length - 1) setSelectedId(files[selectedIndex + 1].id); };
   const goPrev = () => { if (selectedIndex > 0) setSelectedId(files[selectedIndex - 1].id); };
   const fileExt = (name: string) => name.split(".").pop()?.toUpperCase() ?? "?";
 
@@ -514,7 +522,7 @@ export function AudioTagEditor() {
     },
     [defaultFieldKeys, extraFields, labelForKey]
   );
-  const allFields = buildFieldsForFile(selectedFile);
+  const allFields = hasSelectedFile ? buildFieldsForFile(selectedFile) : [];
   const knownTagFields = Object.entries(TAG_LABELS)
     .map(([key, label]) => ({ key: normalizeTagKey(key), label }))
     .filter(({ key }, idx, arr) => arr.findIndex((f) => f.key === key) === idx);
@@ -829,6 +837,7 @@ export function AudioTagEditor() {
 
         {/* Synchronized field rows — scroll together */}
         <div className="flex-1 overflow-y-auto thin-scrollbar">
+          {hasSelectedFile ? (
           <div className="p-4 space-y-3">
             {allFields.map(({ key, label }) => {
               const origVal = getTagValue(selectedFile.savedTags, key);
@@ -947,6 +956,14 @@ export function AudioTagEditor() {
               </button>
             </div>
           </div>
+          ) : (
+            <div className="h-full flex items-center justify-center p-6 text-center">
+              <div>
+                <div className="text-sm text-[#656d76]">No audio files found</div>
+                <div className="mt-1 text-xs text-[#8c959f]">Choose another folder or add supported audio files within 5 folder levels.</div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Bottom action bar */}
@@ -954,7 +971,7 @@ export function AudioTagEditor() {
           <div className="justify-self-start">
             <button
               onClick={goPrev}
-              disabled={selectedIndex === 0}
+              disabled={!hasSelectedFile || selectedIndex === 0}
               className="flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft size={13} /> Prev
@@ -972,7 +989,7 @@ export function AudioTagEditor() {
           <div className="justify-self-end">
             <button
               onClick={goNext}
-              disabled={selectedIndex === files.length - 1}
+              disabled={!hasSelectedFile || selectedIndex === files.length - 1}
               className="flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Next <ChevronRight size={13} />
