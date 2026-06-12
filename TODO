@@ -13,7 +13,7 @@
 - [x] 中间的标题（例如：01 Grace Falls Upon Us.m4aC:\Users\Heping Wang\Desktop\music\矽谷生命河灵粮堂\Heaven Opened\01 Grace Falls Upon Us.m4a） 过长后面的就 ...，不要换行，或者和 右侧的预留字段（unsaved changes）发生冲突
 - [x] 按钮，键盘切换文件时，左侧 audio files 列表需要滚动到当前选中的文件
 - [x] 启动或者扫描不要让 app 里面是白屏，至少显示骨架，如果显示，骨架屏至少显示 0.3 秒
-- [x] 编写 README.md 的 ## Introduction 内容，就是介绍这个项目的功能和用途，还有特点
+- [x] 编写 README.md 的 ## Introduction 内容，就是介绍这个项目的功能和用途，还有特点。中英双版本
 
 ## 待定
 
