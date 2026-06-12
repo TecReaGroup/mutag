@@ -21,10 +21,12 @@ const AUDIO_EXTENSIONS = new Set([
 ]);
 const MAX_AUDIO_SCAN_DEPTH = 5;
 const CONFIG_PATH = path.join(os.tmpdir(), "mutag_config.json");
+const APP_ICON = path.join(__dirname, "..", "..", "assets", "icon", "icon.png");
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
     title: "mutag",
+    icon: APP_ICON,
     width: 1280,
     height: 800,
     minWidth: 960,
