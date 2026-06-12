@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, FolderOpen, Settings, ArrowLeft, GripVertical, Undo2 } from "lucide-react";
 import type { AudioFile, AudioTag } from "@/shared/audio-tags";
 
@@ -227,7 +227,6 @@ export function AudioTagEditor() {
   const [selectedId, setSelectedId] = useState<string>("2");
   const [extraFields, setExtraFields] = useState<{ key: string; label: string }[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [newFieldName, setNewFieldName] = useState("");
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [leftW, setLeftW] = useState(224);   // files panel px
   const [rightW, setRightW] = useState(208); // pending panel px
@@ -237,7 +236,6 @@ export function AudioTagEditor() {
   const dragFromRef = useRef<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [addingDefault, setAddingDefault] = useState(false);
-  const [newDefaultName, setNewDefaultName] = useState("");
   const [rightTab, setRightTab] = useState<"pending" | "chat">("pending");
   const [openAI, setOpenAI] = useState({
     baseURL: "https://api.openai.com/v1",
@@ -257,6 +255,17 @@ export function AudioTagEditor() {
       (k) => getTagValue(effectiveTags, k) !== getTagValue(selectedFile.savedTags, k)
     );
   const hasPendingChanges = hasAnyChange;
+
+  useEffect(() => {
+    setIsAdding(false);
+    setFocusedField(null);
+  }, [selectedId]);
+
+  useEffect(() => {
+    setIsAdding(false);
+    setAddingDefault(false);
+    setFocusedField(null);
+  }, [showSettings, settingsCategory]);
 
   const handleOpenFolder = useCallback(async () => {
     if (!window.audioTagApi) return;
@@ -506,16 +515,19 @@ export function AudioTagEditor() {
     [defaultFieldKeys, extraFields, labelForKey]
   );
   const allFields = buildFieldsForFile(selectedFile);
+  const knownTagFields = Object.entries(TAG_LABELS)
+    .map(([key, label]) => ({ key: normalizeTagKey(key), label }))
+    .filter(({ key }, idx, arr) => arr.findIndex((f) => f.key === key) === idx);
+  const availableAddFields = knownTagFields
+    .filter(({ key }) => !allFields.some((f) => normalizeTagKey(f.key) === key));
+  const availableDefaultFields = knownTagFields
+    .filter(({ key }) => !defaultFieldKeys.some((defaultKey) => normalizeTagKey(defaultKey) === key));
 
-  const confirmAddField = () => {
-    const raw = newFieldName.trim();
-    if (!raw) { setIsAdding(false); setNewFieldName(""); return; }
-    const key = normalizeTagKey(raw.toLowerCase().replace(/\s+/g, "_"));
-    if (allFields.some((f) => f.key === key)) { setIsAdding(false); setNewFieldName(""); return; }
-    setExtraFields((prev) => (prev.some((f) => f.key === key) ? prev : [...prev, { key, label: raw }]));
+  const selectAddField = (key: string, label: string) => {
+    if (allFields.some((f) => normalizeTagKey(f.key) === key)) { setIsAdding(false); return; }
+    setExtraFields((prev) => (prev.some((f) => normalizeTagKey(f.key) === key) ? prev : [...prev, { key, label }]));
     updateTempField(key, "");
     setIsAdding(false);
-    setNewFieldName("");
   };
 
   if (showSettings) {
@@ -623,52 +635,47 @@ export function AudioTagEditor() {
                     );
                   })}
 
-                  {addingDefault ? (
-                    <div className="flex items-center gap-2 px-3 py-2 bg-white border border-[#0969da] rounded">
-                      <Plus size={14} className="text-[#656d76]" />
-                      <input
-                        autoFocus
-                        value={newDefaultName}
-                        onChange={(e) => setNewDefaultName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            const raw = newDefaultName.trim();
-                            if (!raw) { setAddingDefault(false); return; }
-                            const key = normalizeTagKey(raw.toLowerCase().replace(/\s+/g, "_"));
-                            if (!defaultFieldKeys.map(normalizeTagKey).includes(key)) {
-                              addDefault(key);
-                              if (
-                                !TAG_FIELDS.some((f) => f.key === key) &&
-                                !extraFields.some((f) => f.key === key)
-                              ) {
-                                setExtraFields((prev) => [...prev, { key, label: raw }]);
-                              }
-                            }
-                            setNewDefaultName("");
-                            setAddingDefault(false);
-                          } else if (e.key === "Escape") {
-                            setNewDefaultName("");
-                            setAddingDefault(false);
-                          }
-                        }}
-                        placeholder="Field name (e.g. Composer)"
-                        className="flex-1 h-7 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
-                      />
-                      <button
-                        onClick={() => { setNewDefaultName(""); setAddingDefault(false); }}
-                        className="text-[#656d76] hover:text-[#1f2328]"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ) : (
+                  <div className="relative">
+                    {addingDefault && (
+                      <div className="absolute bottom-full left-0 right-0 mb-2 rounded border border-[#d0d7de] bg-white shadow-lg overflow-hidden z-10">
+                        <div className="h-8 px-3 flex items-center justify-between border-b border-[#d0d7de] bg-[#f6f8fa]">
+                          <span className="text-[10px] text-[#656d76] uppercase tracking-wider">Choose default field</span>
+                          <button
+                            onClick={() => setAddingDefault(false)}
+                            className="h-6 w-6 flex items-center justify-center text-[#656d76] hover:text-[#1f2328] transition-colors"
+                            title="Close"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                        <div className="max-h-56 overflow-y-auto thin-scrollbar py-1">
+                          {availableDefaultFields.length === 0 ? (
+                            <div className="px-3 py-2 text-xs text-[#8c959f] italic">No available fields</div>
+                          ) : (
+                            availableDefaultFields.map(({ key, label }) => (
+                              <button
+                                key={key}
+                                onClick={() => { addDefault(key); setAddingDefault(false); }}
+                                className="w-full px-3 py-2 text-left text-xs text-[#1f2328] hover:bg-[#ddf4ff] hover:text-[#0969da] transition-colors"
+                              >
+                                {label}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
                     <button
-                      onClick={() => setAddingDefault(true)}
-                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-[#656d76] hover:text-[#0969da] border border-dashed border-[#d0d7de] hover:border-[#0969da] rounded transition-colors"
+                      onClick={() => setAddingDefault((open) => !open)}
+                      className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs border border-dashed rounded transition-colors ${
+                        addingDefault
+                          ? "border-[#0969da] bg-[#ddf4ff] text-[#0969da]"
+                          : "border-[#d0d7de] text-[#656d76] hover:text-[#0969da] hover:border-[#0969da]"
+                      }`}
                     >
                       <Plus size={13} /> Add default field
                     </button>
-                  )}
+                  </div>
                 </div>
               </div>
             )}
@@ -898,42 +905,47 @@ export function AudioTagEditor() {
             })}
 
             {/* Add-field row — spans Original + Modified */}
-            {isAdding ? (
-              <div className="h-11 flex items-center gap-2 rounded border border-dashed border-[#0969da] bg-[#ddf4ff] px-2">
-                <input
-                  autoFocus
-                  type="text"
-                  value={newFieldName}
-                  onChange={(e) => setNewFieldName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") confirmAddField();
-                    if (e.key === "Escape") { setIsAdding(false); setNewFieldName(""); }
-                  }}
-                  placeholder="Field name (e.g. Composer)"
-                  className="flex-1 h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
-                />
-                <button
-                  onClick={confirmAddField}
-                  className="h-8 px-3 text-xs rounded border border-[#1a7f37] bg-[#1f883d] text-white hover:bg-[#1a7f37] transition-colors"
-                >
-                  Add
-                </button>
-                <button
-                  onClick={() => { setIsAdding(false); setNewFieldName(""); }}
-                  className="h-8 w-7 flex items-center justify-center text-[#656d76] hover:text-[#1f2328] transition-colors"
-                  title="Cancel"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            ) : (
+            <div className="relative">
+              {isAdding && (
+                <div className="absolute bottom-full left-0 right-0 mb-2 rounded border border-[#d0d7de] bg-white shadow-lg overflow-hidden z-10">
+                  <div className="h-8 px-3 flex items-center justify-between border-b border-[#d0d7de] bg-[#f6f8fa]">
+                    <span className="text-[10px] text-[#656d76] uppercase tracking-wider">Choose field</span>
+                    <button
+                      onClick={() => setIsAdding(false)}
+                      className="h-6 w-6 flex items-center justify-center text-[#656d76] hover:text-[#1f2328] transition-colors"
+                      title="Close"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto thin-scrollbar py-1">
+                    {availableAddFields.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-[#8c959f] italic">No available fields</div>
+                    ) : (
+                      availableAddFields.map(({ key, label }) => (
+                        <button
+                          key={key}
+                          onClick={() => selectAddField(key, label)}
+                          className="w-full px-3 py-2 text-left text-xs text-[#1f2328] hover:bg-[#ddf4ff] hover:text-[#0969da] transition-colors"
+                        >
+                          {label}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
               <button
-                onClick={() => setIsAdding(true)}
-                className="w-full h-11 flex items-center justify-center gap-1.5 px-3 text-xs rounded border border-dashed border-[#d0d7de] text-[#656d76] hover:text-[#0969da] hover:border-[#0969da] hover:bg-[#ddf4ff] transition-colors"
+                onClick={() => setIsAdding((open) => !open)}
+                className={`w-full h-11 flex items-center justify-center gap-1.5 px-3 text-xs rounded border border-dashed transition-colors ${
+                  isAdding
+                    ? "border-[#0969da] bg-[#ddf4ff] text-[#0969da]"
+                    : "border-[#d0d7de] text-[#656d76] hover:text-[#0969da] hover:border-[#0969da] hover:bg-[#ddf4ff]"
+                }`}
               >
                 <Plus size={14} /> Add field
               </button>
-            )}
+            </div>
           </div>
         </div>
 

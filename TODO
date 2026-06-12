@@ -3,6 +3,6 @@
 - [ ] 本地化存储 就是上一次打开的文件夹，llm 配置, audio tag 什么的软件配置（计算机temp目录里面 名字为 mutag_config.json），还有 modified chat 的数据（打开的项目根目录下面创建一个 mutag.json 文件，每次相关编辑同步保存），就是关闭程序后下次还能恢复打开
 - [x] tag 删除和添加逻辑
 - [ ] 迭代遍历文件夹，哪怕内容为空直接files也为空就行
-- [ ] npm run dev 的时候才有 demo 数据（只有开发测试的时候有）， npm run 或者正式发布则没有, preview 或者正式发布的时候默认进去为空
+- [ ] npm run dev 的时候才有 demo files 数据（只有开发测试的时候有）， npm run 或者正式发布则没有, preview 或者正式发布的时候默认进去files内容为空
 - [x] settings openai -> LLM
-- [ ] 点击add field，向上弹出选择菜单，点击选择 field name （需要时上方未出现过的字段）
+- [x] 点击add field，向上弹出选择菜单，点击选择 field name （需要时上方未出现过的字段）
