@@ -7,8 +7,34 @@
   "scripts": {
     "build": "electron-vite build",
     "dev": "electron-vite dev",
+    "dist": "npm run build && electron-builder --win portable",
+    "pack": "npm run build && electron-builder --dir",
     "postinstall": "electron --version",
     "preview": "electron-vite preview"
+  },
+  "build": {
+    "appId": "com.mutag.app",
+    "productName": "mutag",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-taglib-sharp/**/*"
+    ],
+    "win": {
+      "icon": "assets/icon/icon.png",
+      "target": [
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
     "lucide-react": "0.487.0",
@@ -20,6 +46,7 @@
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
     "electron": "42.4.0",
+    "electron-builder": "26.0.12",
     "electron-vite": "4.0.0",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5"

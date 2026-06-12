@@ -253,9 +253,46 @@ const DEFAULT_OPENAI = {
   baseURL: "https://api.openai.com/v1",
   apiKey: "",
   model: "gpt-4o-mini",
+  filesPerRequest: 5,
+  concurrency: 1,
 };
 const DEFAULT_LEFT_W = 224;
 const DEFAULT_RIGHT_W = 208;
+
+function clampPositiveInteger(value: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.floor(value));
+}
+
+function chunkFiles<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
+type SettledBatchResult<R> =
+  | { ok: true; value: R }
+  | { ok: false; error: unknown };
+
+async function runSettledWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>) {
+  const results: SettledBatchResult<R>[] = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(concurrency, items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      try {
+        results[index] = { ok: true, value: await worker(items[index], index) };
+      } catch (error) {
+        results[index] = { ok: false, error };
+      }
+    }
+  }));
+
+  return results;
+}
 
 type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
@@ -413,7 +450,14 @@ export function AudioTagEditor() {
       try {
         const config = await window.audioTagApi?.loadConfig();
         if (cancelled) return;
-        if (config?.openAI) setOpenAI((prev) => ({ ...prev, ...config.openAI }));
+        if (config?.openAI) {
+          setOpenAI((prev) => ({
+            ...prev,
+            ...config.openAI,
+            filesPerRequest: clampPositiveInteger(config.openAI.filesPerRequest, prev.filesPerRequest),
+            concurrency: clampPositiveInteger(config.openAI.concurrency, prev.concurrency),
+          }));
+        }
         if (Array.isArray(config?.audioTag?.defaultFieldKeys)) setDefaultFieldKeys(config.audioTag.defaultFieldKeys);
         if (typeof config?.layout?.leftW === "number") setLeftW(config.layout.leftW);
         if (typeof config?.layout?.rightW === "number") setRightW(config.layout.rightW);
@@ -591,33 +635,57 @@ export function AudioTagEditor() {
     setChatSending(true);
 
     try {
-      const res = await fetch(`${openAI.baseURL.replace(/\/$/, "")}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${openAI.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: openAI.model,
-          messages: [systemMsg, contextMsg, ...chatMessages, userMsg],
-        }),
+      const filesPerRequest = clampPositiveInteger(openAI.filesPerRequest, DEFAULT_OPENAI.filesPerRequest);
+      const concurrency = clampPositiveInteger(openAI.concurrency, DEFAULT_OPENAI.concurrency);
+      const batches = chunkFiles(files, filesPerRequest);
+      const url = `${openAI.baseURL.replace(/\/$/, "")}/chat/completions`;
+      const results = await runSettledWithConcurrency(batches, concurrency, async (batch, batchIndex) => {
+        const batchDict: Record<string, AudioTag> = {};
+        for (const f of batch) batchDict[f.id] = f.savedTags;
+        const batchContextMsg = {
+          ...contextMsg,
+          content: "Files:\n" + JSON.stringify(batchDict, null, 2),
+        };
+
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${openAI.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: openAI.model,
+            messages: [systemMsg, batchContextMsg, ...chatMessages, userMsg],
+          }),
+        });
+        if (!res.ok) throw new Error(`Batch ${batchIndex + 1}/${batches.length}: ${res.status} ${res.statusText}`);
+        const data = await res.json();
+        const content: string = data?.choices?.[0]?.message?.content ?? "";
+
+        const match = content.match(/\{[\s\S]*\}/);
+        if (!match) throw new Error(`Batch ${batchIndex + 1}/${batches.length}: response did not contain a JSON object`);
+        const parsed = JSON.parse(match[0]);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error(`Batch ${batchIndex + 1}/${batches.length}: response was not a JSON object`);
+        }
+        const updates = parsed as Record<string, Record<string, string | null>>;
+        applyChatChanges(updates);
+        return updates;
       });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      const data = await res.json();
-      const content: string = data?.choices?.[0]?.message?.content ?? "";
 
-      const match = content.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error("Response did not contain a JSON object");
-      const parsed = JSON.parse(match[0]);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("Response was not a JSON object");
+      const failures = results.filter((result) => !result.ok) as { ok: false; error: unknown }[];
+      const merged = Object.assign(
+        {},
+        ...results.flatMap((result) => (result.ok ? [result.value] : []))
+      ) as Record<string, Record<string, string | null>>;
+      const count = Object.keys(merged).length;
+      if (failures.length > 0) {
+        const firstError = failures[0].error instanceof Error ? failures[0].error.message : String(failures[0].error);
+        throw new Error(`${failures.length}/${batches.length} request(s) failed after applying ${count} file(s): ${firstError}`);
       }
-
-      applyChatChanges(parsed);
-      const count = Object.keys(parsed).length;
       setChatMessages((prev) => [
         ...prev,
-        { role: "assistant", content: `Applied changes to ${count} file(s).` },
+        { role: "assistant", content: `Applied changes to ${count} file(s) across ${batches.length} request(s).` },
       ]);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -668,6 +736,7 @@ export function AudioTagEditor() {
       (k) => getTagValue(f.tempTags, k) !== getTagValue(f.savedTags, k)
     );
   });
+  const canClearChat = !chatSending && chatMessages.length > 0;
 
   const labelForKey = useCallback(
     (key: string) => extraFields.find((f) => f.key === key)?.label ?? formatTagLabel(key),
@@ -918,6 +987,33 @@ export function AudioTagEditor() {
                       className="w-full h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
                     />
                   </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block">
+                      <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">Files per request</div>
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={openAI.filesPerRequest}
+                        onChange={(e) => setOpenAI((s) => ({ ...s, filesPerRequest: clampPositiveInteger(e.target.valueAsNumber, DEFAULT_OPENAI.filesPerRequest) }))}
+                        className="w-full h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
+                      />
+                    </label>
+                    <label className="block">
+                      <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">Concurrency</div>
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={openAI.concurrency}
+                        onChange={(e) => setOpenAI((s) => ({ ...s, concurrency: clampPositiveInteger(e.target.valueAsNumber, DEFAULT_OPENAI.concurrency) }))}
+                        className="w-full h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
+                      />
+                    </label>
+                  </div>
+                  <p className="text-xs text-[#656d76]">
+                    Chat sends files in batches in the background, but keeps a single user message and a single assistant result in the chat history.
+                  </p>
                 </div>
               </div>
             )}
@@ -1327,7 +1423,7 @@ export function AudioTagEditor() {
         ) : (
           <>
             <div className={`${HEADER_H} px-4 flex items-center border-b border-[#d0d7de] flex-shrink-0 bg-[#f6f8fa]`}>
-              <span className="text-[10px] text-[#8c959f] uppercase tracking-wider">{files.length} files in context</span>
+              <span className="text-[10px] text-[#8c959f] uppercase tracking-wider">{files.length} files · {clampPositiveInteger(openAI.filesPerRequest, DEFAULT_OPENAI.filesPerRequest)}/request · {clampPositiveInteger(openAI.concurrency, DEFAULT_OPENAI.concurrency)} concurrent</span>
             </div>
             <div className="flex-1 overflow-y-auto thin-scrollbar p-3 space-y-2">
               {chatMessages.length === 0 && (
@@ -1353,14 +1449,23 @@ export function AudioTagEditor() {
               )}
             </div>
             <div className="border-t border-[#d0d7de] p-2 flex-shrink-0 space-y-1.5">
-              {dirtyFiles.length > 0 && (
-                <div className="text-[10px] text-[#9a6700] px-1">
-                  Discard or save pending changes before chatting.
-                </div>
-              )}
               {chatError && (
                 <div className="text-[10px] text-[#cf222e] px-1 truncate" title={chatError}>{chatError}</div>
               )}
+              <div className="flex items-center gap-2">
+                {dirtyFiles.length > 0 && (
+                  <div className="min-w-0 flex-1 text-[10px] leading-4 text-[#9a6700] px-1 whitespace-normal break-words">
+                    Discard or save pending changes before chatting.
+                  </div>
+                )}
+                <button
+                  onClick={() => setChatMessages([])}
+                  disabled={!canClearChat}
+                  className="ml-auto flex-shrink-0 px-2 py-1 text-[10px] rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#cf222e] hover:border-[#cf222e] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#656d76] disabled:hover:border-[#d0d7de] transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
               <textarea
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}

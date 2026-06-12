@@ -35,6 +35,8 @@ export interface MutagConfig {
     baseURL: string;
     apiKey: string;
     model: string;
+    filesPerRequest: number;
+    concurrency: number;
   };
   audioTag: {
     defaultFieldKeys: string[];
