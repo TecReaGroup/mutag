@@ -147,13 +147,14 @@ const STATUS_BADGE: Record<DiffStatus, { label: string; color: string }> = {
   deleted:   { label: "D", color: "text-[#cf222e]" },
 };
 
-function AutoTextarea({ value, onChange, onFocus, onBlur, placeholder, className }: {
+function AutoTextarea({ value, onChange, onFocus, onBlur, placeholder, className, disabled }: {
   value: string;
   onChange: (v: string) => void;
   onFocus?: () => void;
   onBlur?: () => void;
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
 }) {
   // A hidden mirror div drives the height (same trick the Original column relies on);
   // the textarea is absolutely positioned on top and inherits that height.
@@ -170,8 +171,9 @@ function AutoTextarea({ value, onChange, onFocus, onBlur, placeholder, className
         onChange={(e) => onChange(e.target.value)}
         onFocus={onFocus}
         onBlur={onBlur}
+        disabled={disabled}
         placeholder={placeholder}
-        className="absolute inset-0 w-full h-full px-3 py-2 text-sm bg-transparent outline-none placeholder-[#afb8c1] placeholder:italic resize-none whitespace-pre-wrap break-words"
+        className="absolute inset-0 w-full h-full px-3 py-2 text-sm bg-transparent outline-none placeholder-[#afb8c1] placeholder:italic resize-none whitespace-pre-wrap break-words disabled:cursor-not-allowed"
       />
     </div>
   );
@@ -335,6 +337,7 @@ export function AudioTagEditor() {
   const [chatInput, setChatInput] = useState("");
   const [fileSearch, setFileSearch] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [acceptAllProgress, setAcceptAllProgress] = useState<{ done: number; total: number } | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [projectRoot, setProjectRoot] = useState("");
@@ -363,6 +366,7 @@ export function AudioTagEditor() {
       )
     : false;
   const hasPendingChanges = hasAnyChange;
+  const isAcceptingAll = acceptAllProgress !== null;
   const visibleFiles = files.filter((f) => fuzzyIncludes(f.name, fileSearch));
 
   useEffect(() => {
@@ -433,7 +437,7 @@ export function AudioTagEditor() {
   }, []);
 
   const handleOpenFolder = useCallback(async () => {
-    if (!window.audioTagApi) return;
+    if (!window.audioTagApi || isAcceptingAll) return;
 
     setIsScanning(true);
     scanStartRef.current = Date.now();
@@ -449,7 +453,7 @@ export function AudioTagEditor() {
       if (remaining > 0) setTimeout(() => setIsScanning(false), remaining);
       else setIsScanning(false);
     }
-  }, []);
+  }, [isAcceptingAll]);
 
   useEffect(() => {
     if (!window.audioTagApi) { setConfigLoaded(true); setIsScanning(false); return; }
@@ -498,6 +502,7 @@ export function AudioTagEditor() {
 
   const updateTempField = useCallback(
     (field: string, value: string) => {
+      if (isAcceptingAll) return;
       const key = normalizeTagKey(field);
       setSaveError(null);
       setFiles((prev) =>
@@ -511,7 +516,7 @@ export function AudioTagEditor() {
         })
       );
     },
-    [selectedId]
+    [isAcceptingAll, selectedId]
   );
 
   const deleteField = useCallback(
@@ -522,6 +527,7 @@ export function AudioTagEditor() {
   );
 
   const saveFile = useCallback(async () => {
+    if (isAcceptingAll) return;
     const current = files.find((f) => f.id === selectedId);
     if (!current) return;
 
@@ -551,53 +557,66 @@ export function AudioTagEditor() {
     );
     setSelectedId(savedPath);
     setExtraFields((prev) => prev.filter(({ key }) => getTagValue(savedTags, key) !== ""));
-  }, [files, selectedId]);
+  }, [files, isAcceptingAll, selectedId]);
 
   const discardChanges = useCallback(() => {
+    if (isAcceptingAll) return;
     setFiles((prev) =>
       prev.map((f) => (f.id !== selectedId ? f : { ...f, tempTags: null }))
     );
-  }, [selectedId]);
+  }, [isAcceptingAll, selectedId]);
 
   const discardAll = useCallback(() => {
+    if (isAcceptingAll) return;
     setFiles((prev) => prev.map((f) => ({ ...f, tempTags: null })));
-  }, []);
+  }, [isAcceptingAll]);
 
   const acceptAll = useCallback(async () => {
+    if (isAcceptingAll) return;
     const changedFiles = files.filter((f) => f.tempTags !== null);
-    const savedById = new Map<string, { tags: AudioTag; path: string; name: string }>();
+    if (changedFiles.length === 0) return;
 
-    if (window.audioTagApi) {
-      try {
-        for (const f of changedFiles) {
-          const next: AudioTag = { ...(f.tempTags ?? f.savedTags) } as AudioTag;
+    setSaveError(null);
+    setAcceptAllProgress({ done: 0, total: changedFiles.length });
+    const savedById = new Map<string, { tags: AudioTag; path: string; name: string; originalId: string }>();
+
+    try {
+      for (let index = 0; index < changedFiles.length; index += 1) {
+        const f = changedFiles[index];
+        const next: AudioTag = { ...(f.tempTags ?? f.savedTags) } as AudioTag;
+        let savedTags = next;
+        let savedPath = f.path;
+        let savedName = f.name;
+
+        if (window.audioTagApi) {
           const result = await window.audioTagApi.saveTags(f.path, next);
           if (!result.ok) { setSaveError(result.error); return; }
-          savedById.set(f.id, { tags: result.tags, path: result.path, name: result.name });
+          savedTags = result.tags;
+          savedPath = result.path;
+          savedName = result.name;
         }
-      } catch (err) {
-        setSaveError(formatSaveError(err));
-        return;
-      }
-    }
 
-    setFiles((prev) =>
-      prev.map((f) => {
-        if (f.tempTags === null) return f;
-        const saved = savedById.get(f.id);
-        if (saved) return { ...f, id: saved.path, path: saved.path, name: saved.name, savedTags: saved.tags, tempTags: null };
-        const next: AudioTag = { ...(f.tempTags ?? f.savedTags) } as AudioTag;
-        return { ...f, savedTags: next, tempTags: null };
-      })
-    );
-    setSelectedId((prevId) => {
-      const renamed = savedById.get(prevId);
-      return renamed ? renamed.path : prevId;
-    });
-    setExtraFields((prev) =>
-      prev.filter(({ key }) => files.some((f) => getTagValue(savedById.get(f.id)?.tags ?? f.savedTags, key) !== ""))
-    );
-  }, [files]);
+        savedById.set(f.id, { tags: savedTags, path: savedPath, name: savedName, originalId: f.id });
+        setFiles((prev) =>
+          prev.map((item) =>
+            item.id === f.id
+              ? { ...item, id: savedPath, path: savedPath, name: savedName, savedTags, tempTags: null }
+              : item
+          )
+        );
+        setSelectedId((prevId) => (prevId === f.id ? savedPath : prevId));
+        setAcceptAllProgress({ done: index + 1, total: changedFiles.length });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      setExtraFields((prev) =>
+        prev.filter(({ key }) => files.some((f) => getTagValue(savedById.get(f.id)?.tags ?? f.savedTags, key) !== ""))
+      );
+    } catch (err) {
+      setSaveError(formatSaveError(err));
+    } finally {
+      setAcceptAllProgress(null);
+    }
+  }, [files, isAcceptingAll]);
 
   const applyChatChanges = useCallback((updates: Record<string, Record<string, string | null>>) => {
     setFiles((prev) =>
@@ -620,7 +639,7 @@ export function AudioTagEditor() {
 
   const sendChat = useCallback(async () => {
     const text = chatInput.trim();
-    if (!text || chatSending) return;
+    if (!text || chatSending || isAcceptingAll) return;
     setChatError(null);
 
     const userMsg = { role: "user" as const, content: text };
@@ -716,14 +735,16 @@ export function AudioTagEditor() {
       if (chatAbortRef.current === abortController) chatAbortRef.current = null;
       setChatSending(false);
     }
-  }, [chatInput, chatSending, chatMessages, files, openAI, applyChatChanges]);
+  }, [chatInput, chatSending, chatMessages, files, isAcceptingAll, openAI, applyChatChanges]);
 
   const goNext = useCallback(() => {
+    if (isAcceptingAll) return;
     if (selectedIndex >= 0 && selectedIndex < files.length - 1) setSelectedId(files[selectedIndex + 1].id);
-  }, [files, selectedIndex]);
+  }, [files, isAcceptingAll, selectedIndex]);
   const goPrev = useCallback(() => {
+    if (isAcceptingAll) return;
     if (selectedIndex > 0) setSelectedId(files[selectedIndex - 1].id);
-  }, [files, selectedIndex]);
+  }, [files, isAcceptingAll, selectedIndex]);
 
   useEffect(() => {
     if (showSettings || !hasSelectedFile) return;
@@ -848,7 +869,8 @@ export function AudioTagEditor() {
       <div className="flex flex-col h-screen w-full bg-[#f6f8fa] text-[#1f2328] font-mono overflow-hidden border-t border-[#d0d7de]">
         <div className={`${HEADER_H} px-4 flex items-center gap-2 border-b border-[#d0d7de] bg-white flex-shrink-0`}>
           <button
-            onClick={() => setShowSettings(false)}
+            onClick={() => { if (!isAcceptingAll) setShowSettings(false); }}
+            disabled={isAcceptingAll}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[#656d76] hover:text-[#1f2328] hover:bg-[#f6f8fa] transition-colors"
           >
             <ArrowLeft size={14} /> Back
@@ -864,7 +886,8 @@ export function AudioTagEditor() {
               return (
                 <button
                   key={c.key}
-                  onClick={() => setSettingsCategory(c.key)}
+                  onClick={() => { if (!isAcceptingAll) setSettingsCategory(c.key); }}
+                  disabled={isAcceptingAll}
                   className={`w-full text-left px-4 py-2 text-xs transition-colors border-l-2 ${
                     active
                       ? "bg-[#ddf4ff] border-[#0969da] text-[#1f2328]"
@@ -917,7 +940,7 @@ export function AudioTagEditor() {
                         <span className="text-[10px] text-[#8c959f] uppercase tracking-wider w-6">{idx + 1}</span>
                         <span className="text-sm text-[#1f2328] flex-1">{labelOf(key)}</span>
                         <button
-                          onClick={() => removeDefault(key)}
+                          onClick={() => { if (!isAcceptingAll) removeDefault(key); }}
                           title="Remove from defaults"
                           className="opacity-0 group-hover:opacity-100 text-[#656d76] hover:text-[#cf222e] transition-opacity"
                         >
@@ -933,7 +956,7 @@ export function AudioTagEditor() {
                         <div className="h-8 px-3 flex items-center justify-between border-b border-[#d0d7de] bg-[#f6f8fa]">
                           <span className="text-[10px] text-[#656d76] uppercase tracking-wider">Choose default field</span>
                           <button
-                            onClick={() => setAddingDefault(false)}
+                            onClick={() => { if (!isAcceptingAll) setAddingDefault(false); }}
                             className="h-6 w-6 flex items-center justify-center text-[#656d76] hover:text-[#1f2328] transition-colors"
                             title="Close"
                           >
@@ -947,7 +970,7 @@ export function AudioTagEditor() {
                             availableDefaultFields.map(({ key, label }) => (
                               <button
                                 key={key}
-                                onClick={() => { addDefault(key); setAddingDefault(false); }}
+                                onClick={() => { if (!isAcceptingAll) { addDefault(key); setAddingDefault(false); } }}
                                 className="w-full px-3 py-2 text-left text-xs text-[#1f2328] hover:bg-[#ddf4ff] hover:text-[#0969da] transition-colors"
                               >
                                 {label}
@@ -958,7 +981,8 @@ export function AudioTagEditor() {
                       </div>
                     )}
                     <button
-                      onClick={() => setAddingDefault((open) => !open)}
+                      onClick={() => { if (!isAcceptingAll) setAddingDefault((open) => !open); }}
+                      disabled={isAcceptingAll}
                       className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs border border-dashed rounded transition-colors ${
                         addingDefault
                           ? "border-[#0969da] bg-[#ddf4ff] text-[#0969da]"
@@ -1055,7 +1079,7 @@ export function AudioTagEditor() {
           <span className="text-xs text-[#656d76] uppercase tracking-wider">Audio Files</span>
           <button
             onClick={handleOpenFolder}
-            disabled={isScanning}
+            disabled={isScanning || isAcceptingAll}
             title="Open folder"
             className="ml-auto flex items-center justify-center w-6 h-6 rounded text-[#656d76] hover:text-[#1f2328] hover:bg-[#f6f8fa] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
           >
@@ -1070,7 +1094,7 @@ export function AudioTagEditor() {
           <input
             value={fileSearch}
             onChange={(e) => setFileSearch(e.target.value)}
-            disabled={isScanning}
+            disabled={isScanning || isAcceptingAll}
             placeholder="Search"
             className="ml-auto min-w-0 flex-1 h-6 px-2 text-[11px] bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da] disabled:bg-[#f6f8fa] disabled:cursor-not-allowed"
           />
@@ -1104,7 +1128,8 @@ export function AudioTagEditor() {
                   if (node) fileButtonRefs.current.set(f.id, node);
                   else fileButtonRefs.current.delete(f.id);
                 }}
-                onClick={() => setSelectedId(f.id)}
+                onClick={() => { if (!isAcceptingAll) setSelectedId(f.id); }}
+                disabled={isAcceptingAll}
                 className={`w-full text-left px-3 py-2 flex items-start gap-2 transition-colors ${
                   isSelected
                     ? "bg-[#ddf4ff] border-l-2 border-[#0969da]"
@@ -1125,9 +1150,10 @@ export function AudioTagEditor() {
       </div>
 
       <button
-        onClick={() => setShowSettings(true)}
+        onClick={() => { if (!isAcceptingAll) setShowSettings(true); }}
+        disabled={isAcceptingAll}
         title="Settings"
-        className="fixed bottom-3 left-3 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-white border border-[#d0d7de] text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] shadow-sm transition-colors"
+        className="fixed bottom-3 left-3 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-white border border-[#d0d7de] text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
       >
         <Settings size={14} />
       </button>
@@ -1249,8 +1275,9 @@ export function AudioTagEditor() {
                         onBlur={() => setTimeout(() => setFocusedField((f) => f === key ? null : f), 150)}
                         placeholder="empty"
                         className="flex-1 min-h-[36px] w-full"
+                        disabled={isAcceptingAll}
                       />
-                      {focusedField === key && (
+                      {!isAcceptingAll && focusedField === key && (
                         <div className="self-stretch flex items-center flex-shrink-0">
                           {status !== "unchanged" && (
                             <button
@@ -1311,7 +1338,8 @@ export function AudioTagEditor() {
                 </div>
               )}
               <button
-                onClick={() => setIsAdding((open) => !open)}
+                onClick={() => { if (!isAcceptingAll) setIsAdding((open) => !open); }}
+                disabled={isAcceptingAll}
                 className={`w-full h-11 flex items-center justify-center gap-1.5 px-3 text-xs rounded border border-dashed transition-colors ${
                   isAdding
                     ? "border-[#0969da] bg-[#ddf4ff] text-[#0969da]"
@@ -1337,7 +1365,7 @@ export function AudioTagEditor() {
           <div className="justify-self-start">
             <button
               onClick={goPrev}
-              disabled={isScanning || !hasSelectedFile || selectedIndex === 0}
+              disabled={isScanning || isAcceptingAll || !hasSelectedFile || selectedIndex === 0}
               className="flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft size={13} /> Prev
@@ -1346,7 +1374,7 @@ export function AudioTagEditor() {
           <div className="justify-self-center">
             <button
               onClick={saveFile}
-              disabled={isScanning || !hasAnyChange}
+              disabled={isScanning || isAcceptingAll || !hasAnyChange}
               className="flex items-center gap-1.5 px-4 py-1.5 text-xs rounded border border-[#1a7f37] bg-[#1f883d] text-white hover:bg-[#1a7f37] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Save size={13} /> Save
@@ -1355,7 +1383,7 @@ export function AudioTagEditor() {
           <div className="justify-self-end">
             <button
               onClick={goNext}
-              disabled={isScanning || !hasSelectedFile || selectedIndex === files.length - 1}
+              disabled={isScanning || isAcceptingAll || !hasSelectedFile || selectedIndex === files.length - 1}
               className="flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Next <ChevronRight size={13} />
@@ -1373,7 +1401,8 @@ export function AudioTagEditor() {
           {(["pending", "chat"] as const).map((t) => (
             <button
               key={t}
-              onClick={() => setRightTab(t)}
+              onClick={() => { if (!isAcceptingAll) setRightTab(t); }}
+              disabled={isAcceptingAll}
               className={`flex-1 text-xs uppercase tracking-wider transition-colors ${
                 rightTab === t
                   ? "text-[#1f2328] border-b-2 border-[#0969da] -mb-px"
@@ -1412,7 +1441,8 @@ export function AudioTagEditor() {
                 return (
                   <button
                     key={f.id}
-                    onClick={() => setSelectedId(f.id)}
+                    onClick={() => { if (!isAcceptingAll) setSelectedId(f.id); }}
+                    disabled={isAcceptingAll}
                     className={`w-full text-left px-3 py-2 hover:bg-[#f6f8fa] transition-colors ${f.id === selectedId ? "bg-[#ddf4ff]" : ""}`}
                   >
                     <div className="text-xs text-[#1f2328] truncate">{f.name}</div>
@@ -1437,14 +1467,14 @@ export function AudioTagEditor() {
             <div className="border-t border-[#d0d7de] p-2 flex-shrink-0 flex gap-2">
               <button
                 onClick={acceptAll}
-                disabled={dirtyFiles.length === 0}
+                disabled={dirtyFiles.length === 0 || isAcceptingAll}
                 className="flex-1 px-2 py-1.5 text-xs rounded bg-[#1f883d] text-white hover:bg-[#1a7f37] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                Accept all
+                {acceptAllProgress ? `Saving ${acceptAllProgress.done}/${acceptAllProgress.total}` : "Accept all"}
               </button>
               <button
                 onClick={discardAll}
-                disabled={dirtyFiles.length === 0}
+                disabled={dirtyFiles.length === 0 || isAcceptingAll}
                 className="flex-1 px-2 py-1.5 text-xs rounded border border-[#d0d7de] text-[#656d76] hover:text-[#cf222e] hover:border-[#cf222e] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#656d76] disabled:hover:border-[#d0d7de] transition-colors bg-white"
               >
                 Discard all
@@ -1484,7 +1514,11 @@ export function AudioTagEditor() {
                 <div className="text-[10px] text-[#cf222e] px-1 truncate" title={chatError}>{chatError}</div>
               )}
               <div className="flex items-center gap-2">
-                {dirtyFiles.length > 0 && (
+                {isAcceptingAll ? (
+                  <div className="min-w-0 flex-1 text-[10px] leading-4 text-[#9a6700] px-1 whitespace-normal break-words">
+                    Saving pending changes one by one. Other actions are disabled.
+                  </div>
+                ) : dirtyFiles.length > 0 && (
                   <div className="min-w-0 flex-1 text-[10px] leading-4 text-[#9a6700] px-1 whitespace-normal break-words">
                     Discard or save pending changes before chatting.
                   </div>
@@ -1494,7 +1528,7 @@ export function AudioTagEditor() {
                     if (chatSending) chatAbortRef.current?.abort();
                     else setChatMessages([]);
                   }}
-                  disabled={!chatSending && !canClearChat}
+                  disabled={isAcceptingAll || (!chatSending && !canClearChat)}
                   className={`ml-auto flex-shrink-0 px-2 py-1 text-[10px] rounded border bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
                     chatSending
                       ? "border-[#cf222e] text-[#cf222e] hover:bg-[#ffebe9]"
@@ -1513,14 +1547,14 @@ export function AudioTagEditor() {
                     sendChat();
                   }
                 }}
-                disabled={dirtyFiles.length > 0 || chatSending}
-                placeholder={dirtyFiles.length > 0 ? "Pending changes block chat" : "Describe the changes you want…"}
+                disabled={dirtyFiles.length > 0 || chatSending || isAcceptingAll}
+                placeholder={isAcceptingAll ? "Saving changes..." : dirtyFiles.length > 0 ? "Pending changes block chat" : "Describe the changes you want…"}
                 rows={5}
                 className="w-full px-2 py-1.5 text-xs bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da] resize-none disabled:bg-[#f6f8fa] disabled:cursor-not-allowed"
               />
               <button
                 onClick={sendChat}
-                disabled={dirtyFiles.length > 0 || chatSending || !chatInput.trim()}
+                disabled={dirtyFiles.length > 0 || chatSending || isAcceptingAll || !chatInput.trim()}
                 className="w-full px-2 py-1.5 text-xs rounded bg-[#0969da] text-white hover:bg-[#0860c4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {chatSending ? "Sending…" : "Send"}
