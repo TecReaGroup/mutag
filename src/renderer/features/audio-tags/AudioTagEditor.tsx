@@ -281,13 +281,14 @@ type SettledBatchResult<R> =
   | { ok: true; value: R }
   | { ok: false; error: unknown };
 
-async function runSettledWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>) {
+async function runSettledWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>, signal?: AbortSignal) {
   const results: SettledBatchResult<R>[] = new Array(items.length);
   let nextIndex = 0;
   const workerCount = Math.min(concurrency, items.length);
 
   await Promise.all(Array.from({ length: workerCount }, async () => {
     while (nextIndex < items.length) {
+      if (signal?.aborted) break;
       const index = nextIndex;
       nextIndex += 1;
       try {
@@ -342,6 +343,7 @@ export function AudioTagEditor() {
   const projectSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const configSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const chatAbortRef = useRef<AbortController | null>(null);
   const scanStartRef = useRef(0);
   const MIN_SCAN_MS = 300;
 
@@ -642,6 +644,8 @@ export function AudioTagEditor() {
     setChatMessages((prev) => [...prev, userMsg]);
     setChatInput("");
     setChatSending(true);
+    const abortController = new AbortController();
+    chatAbortRef.current = abortController;
 
     try {
       const filesPerRequest = clampPositiveInteger(openAI.filesPerRequest, DEFAULT_OPENAI.filesPerRequest);
@@ -662,6 +666,7 @@ export function AudioTagEditor() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${openAI.apiKey}`,
           },
+          signal: abortController.signal,
           body: JSON.stringify({
             model: openAI.model,
             messages: [systemMsg, batchContextMsg, ...chatMessages, userMsg],
@@ -680,7 +685,7 @@ export function AudioTagEditor() {
         const updates = parsed as Record<string, Record<string, string | null>>;
         applyChatChanges(updates);
         return updates;
-      });
+      }, abortController.signal);
 
       const failures = results.filter((result) => !result.ok) as { ok: false; error: unknown }[];
       const merged = Object.assign(
@@ -688,6 +693,13 @@ export function AudioTagEditor() {
         ...results.flatMap((result) => (result.ok ? [result.value] : []))
       ) as Record<string, Record<string, string | null>>;
       const count = Object.keys(merged).length;
+      if (abortController.signal.aborted) {
+        setChatMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `Stopped after applying changes to ${count} file(s).` },
+        ]);
+        return;
+      }
       if (failures.length > 0) {
         const firstError = failures[0].error instanceof Error ? failures[0].error.message : String(failures[0].error);
         throw new Error(`${failures.length}/${batches.length} request(s) failed after applying ${count} file(s): ${firstError}`);
@@ -701,6 +713,7 @@ export function AudioTagEditor() {
       setChatError(msg);
       setChatMessages((prev) => [...prev, { role: "assistant", content: `Error: ${msg}` }]);
     } finally {
+      if (chatAbortRef.current === abortController) chatAbortRef.current = null;
       setChatSending(false);
     }
   }, [chatInput, chatSending, chatMessages, files, openAI, applyChatChanges]);
@@ -1477,11 +1490,18 @@ export function AudioTagEditor() {
                   </div>
                 )}
                 <button
-                  onClick={() => setChatMessages([])}
-                  disabled={!canClearChat}
-                  className="ml-auto flex-shrink-0 px-2 py-1 text-[10px] rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#cf222e] hover:border-[#cf222e] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#656d76] disabled:hover:border-[#d0d7de] transition-colors"
+                  onClick={() => {
+                    if (chatSending) chatAbortRef.current?.abort();
+                    else setChatMessages([]);
+                  }}
+                  disabled={!chatSending && !canClearChat}
+                  className={`ml-auto flex-shrink-0 px-2 py-1 text-[10px] rounded border bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+                    chatSending
+                      ? "border-[#cf222e] text-[#cf222e] hover:bg-[#ffebe9]"
+                      : "border-[#d0d7de] text-[#656d76] hover:text-[#cf222e] hover:border-[#cf222e] disabled:hover:text-[#656d76] disabled:hover:border-[#d0d7de]"
+                  }`}
                 >
-                  Clear
+                  {chatSending ? "Stop" : "Clear"}
                 </button>
               </div>
               <textarea
