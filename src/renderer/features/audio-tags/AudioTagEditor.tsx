@@ -465,8 +465,38 @@ export function AudioTagEditor() {
     }
   }, [chatInput, chatSending, chatMessages, files, openAI, applyChatChanges]);
 
-  const goNext = () => { if (selectedIndex >= 0 && selectedIndex < files.length - 1) setSelectedId(files[selectedIndex + 1].id); };
-  const goPrev = () => { if (selectedIndex > 0) setSelectedId(files[selectedIndex - 1].id); };
+  const goNext = useCallback(() => {
+    if (selectedIndex >= 0 && selectedIndex < files.length - 1) setSelectedId(files[selectedIndex + 1].id);
+  }, [files, selectedIndex]);
+  const goPrev = useCallback(() => {
+    if (selectedIndex > 0) setSelectedId(files[selectedIndex - 1].id);
+  }, [files, selectedIndex]);
+
+  useEffect(() => {
+    if (showSettings || !hasSelectedFile) return;
+
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      if (target.isContentEditable) return true;
+      return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (isEditableTarget(event.target)) return;
+
+      if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+        event.preventDefault();
+        goPrev();
+      } else if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+        event.preventDefault();
+        goNext();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [goNext, goPrev, hasSelectedFile, showSettings]);
   const fileExt = (name: string) => name.split(".").pop()?.toUpperCase() ?? "?";
 
   const dirtyFiles = files.filter((f) => {
