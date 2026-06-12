@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, RotateCcw, FolderOpen, Settings, ArrowLeft, GripVertical } from "lucide-react";
+import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, FolderOpen, Settings, ArrowLeft, GripVertical } from "lucide-react";
 import type { AudioFile, AudioTag } from "@/shared/audio-tags";
 
 const INITIAL_FILES: AudioFile[] = [
@@ -45,7 +45,7 @@ const INITIAL_FILES: AudioFile[] = [
   },
 ];
 
-const TAG_FIELDS: { key: keyof AudioTag; label: string }[] = [
+const TAG_FIELDS: { key: string; label: string }[] = [
   { key: "title", label: "Title" },
   { key: "artist", label: "Artist" },
   { key: "album", label: "Album" },
@@ -56,10 +56,75 @@ const TAG_FIELDS: { key: keyof AudioTag; label: string }[] = [
   { key: "lyrics", label: "Lyrics" },
 ];
 
+const TAG_LABELS: Record<string, string> = {
+  title: "Title",
+  artist: "Artist",
+  album: "Album",
+  year: "Year",
+  genre: "Genre",
+  bpm: "BPM",
+  comment: "Comment",
+  lyrics: "Lyrics",
+  album_artist: "Album Artist",
+  composer: "Composer",
+  track_number: "Track Number",
+  track_total: "Track Total",
+  disc_number: "Disc Number",
+  disc_total: "Disc Total",
+  subtitle: "Subtitle",
+  description: "Description",
+  grouping: "Grouping",
+  copyright: "Copyright",
+  conductor: "Conductor",
+  remixedby: "Remixed By",
+  publisher: "Publisher",
+  isrc: "ISRC",
+  initial_key: "Initial Key",
+  musicbrainz_artist_id: "MusicBrainz Artist ID",
+  musicbrainz_album_id: "MusicBrainz Album ID",
+  musicbrainz_albumartist_id: "MusicBrainz Album Artist ID",
+  musicbrainz_track_id: "MusicBrainz Track ID",
+  musicbrainz_release_group_id: "MusicBrainz Release Group ID",
+  musicbrainz_disc_id: "MusicBrainz Disc ID",
+  musicbrainz_release_status: "MusicBrainz Release Status",
+  musicbrainz_release_type: "MusicBrainz Release Type",
+  musicbrainz_release_country: "MusicBrainz Release Country",
+  musicip_id: "MusicIP ID",
+  amazon_id: "Amazon ID",
+};
+
+const TAG_KEY_ALIASES: Record<string, string> = {
+  albumartist: "album_artist",
+  track: "track_number",
+  tracktotal: "track_total",
+  disc: "disc_number",
+  disctotal: "disc_total",
+  initialkey: "initial_key",
+  musicbrainzalbumid: "musicbrainz_album_id",
+  musicbrainzalbumartistid: "musicbrainz_albumartist_id",
+  musicbrainzartistid: "musicbrainz_artist_id",
+  musicbrainztrackid: "musicbrainz_track_id",
+};
+
+function normalizeTagKey(key: string) {
+  return TAG_KEY_ALIASES[key] ?? key;
+}
+
+function formatTagLabel(key: string) {
+  key = normalizeTagKey(key);
+  return TAG_LABELS[key] ?? key.replace(/[_-]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function getTagValue(tags: AudioTag | null | undefined, key: string) {
+  if (!tags) return "";
+  const normalized = normalizeTagKey(key);
+  return tags[normalized] ?? tags[key] ?? "";
+}
+
 type DiffStatus = "unchanged" | "modified" | "added" | "deleted";
 
-function getFieldStatus(original: string, edited: string, isDeleted: boolean): DiffStatus {
-  if (isDeleted) return "deleted";
+function getFieldStatus(original: string, edited: string): DiffStatus {
+  if (original !== "" && edited === "") return "deleted";
   if (original === "" && edited !== "") return "added";
   if (original !== edited) return "modified";
   return "unchanged";
@@ -103,7 +168,7 @@ function AutoTextarea({ value, onChange, onFocus, onBlur, placeholder, className
         onFocus={onFocus}
         onBlur={onBlur}
         placeholder={placeholder}
-        className="absolute inset-0 w-full h-full px-3 py-2 text-sm bg-transparent outline-none placeholder-[#afb8c1] italic resize-none whitespace-pre-wrap break-words"
+        className="absolute inset-0 w-full h-full px-3 py-2 text-sm bg-transparent outline-none placeholder-[#afb8c1] placeholder:italic resize-none whitespace-pre-wrap break-words"
       />
     </div>
   );
@@ -188,9 +253,8 @@ export function AudioTagEditor() {
   const selectedFile = files[selectedIndex];
   const effectiveTags: AudioTag = selectedFile.tempTags ?? { ...selectedFile.savedTags };
   const hasAnyChange =
-    selectedFile.tempDeleted.length > 0 ||
     Object.keys({ ...effectiveTags, ...selectedFile.savedTags }).some(
-      (k) => (effectiveTags[k] ?? "") !== (selectedFile.savedTags[k] ?? "")
+      (k) => getTagValue(effectiveTags, k) !== getTagValue(selectedFile.savedTags, k)
     );
   const hasPendingChanges = hasAnyChange;
 
@@ -210,14 +274,15 @@ export function AudioTagEditor() {
 
   const updateTempField = useCallback(
     (field: string, value: string) => {
+      const key = normalizeTagKey(field);
       setFiles((prev) =>
         prev.map((f) => {
           if (f.id !== selectedId) return f;
           const base = f.tempTags ?? { ...f.savedTags };
           return {
             ...f,
-            tempTags: { ...base, [field]: value },
-            tempDeleted: f.tempDeleted.filter((k) => k !== field),
+            tempTags: { ...base, [key]: value },
+            tempDeleted: [],
           };
         })
       );
@@ -227,26 +292,9 @@ export function AudioTagEditor() {
 
   const deleteField = useCallback(
     (field: string) => {
-      setFiles((prev) =>
-        prev.map((f) => {
-          if (f.id !== selectedId) return f;
-          if (f.tempDeleted.includes(field)) return f;
-          return { ...f, tempDeleted: [...f.tempDeleted, field] };
-        })
-      );
+      updateTempField(field, "");
     },
-    [selectedId]
-  );
-
-  const restoreField = useCallback(
-    (field: string) => {
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.id !== selectedId ? f : { ...f, tempDeleted: f.tempDeleted.filter((k) => k !== field) }
-        )
-      );
-    },
-    [selectedId]
+    [updateTempField]
   );
 
   const saveFile = useCallback(async () => {
@@ -254,11 +302,12 @@ export function AudioTagEditor() {
     if (!current) return;
 
     const next: AudioTag = { ...(current.tempTags ?? current.savedTags) } as AudioTag;
-    for (const k of current.tempDeleted) delete next[k];
 
+    let savedTags = next;
     if (window.audioTagApi) {
       try {
-        await window.audioTagApi.saveTags(current.path, next, current.tempDeleted);
+        const result = await window.audioTagApi.saveTags(current.path, next, []);
+        savedTags = result.tags;
       } catch (err) {
         window.alert(`Failed to save tags: ${err instanceof Error ? err.message : String(err)}`);
         return;
@@ -268,9 +317,10 @@ export function AudioTagEditor() {
     setFiles((prev) =>
       prev.map((f) => {
         if (f.id !== selectedId) return f;
-        return { ...f, savedTags: next, tempTags: null, tempDeleted: [] };
+        return { ...f, savedTags, tempTags: null, tempDeleted: [] };
       })
     );
+    setExtraFields((prev) => prev.filter(({ key }) => getTagValue(savedTags, key) !== ""));
   }, [files, selectedId]);
 
   const discardChanges = useCallback(() => {
@@ -284,14 +334,15 @@ export function AudioTagEditor() {
   }, []);
 
   const acceptAll = useCallback(async () => {
-    const changedFiles = files.filter((f) => f.tempTags !== null || f.tempDeleted.length > 0);
+    const changedFiles = files.filter((f) => f.tempTags !== null);
+    const savedById = new Map<string, AudioTag>();
 
     if (window.audioTagApi) {
       try {
         for (const f of changedFiles) {
           const next: AudioTag = { ...(f.tempTags ?? f.savedTags) } as AudioTag;
-          for (const k of f.tempDeleted) delete next[k];
-          await window.audioTagApi.saveTags(f.path, next, f.tempDeleted);
+          const result = await window.audioTagApi.saveTags(f.path, next, []);
+          savedById.set(f.id, result.tags);
         }
       } catch (err) {
         window.alert(`Failed to save tags: ${err instanceof Error ? err.message : String(err)}`);
@@ -301,11 +352,15 @@ export function AudioTagEditor() {
 
     setFiles((prev) =>
       prev.map((f) => {
-        if (f.tempTags === null && f.tempDeleted.length === 0) return f;
+        if (f.tempTags === null) return f;
+        const savedTags = savedById.get(f.id);
+        if (savedTags) return { ...f, savedTags, tempTags: null, tempDeleted: [] };
         const next: AudioTag = { ...(f.tempTags ?? f.savedTags) } as AudioTag;
-        for (const k of f.tempDeleted) delete next[k];
         return { ...f, savedTags: next, tempTags: null, tempDeleted: [] };
       })
+    );
+    setExtraFields((prev) =>
+      prev.filter(({ key }) => files.some((f) => getTagValue(savedById.get(f.id) ?? f.savedTags, key) !== ""))
     );
   }, [files]);
 
@@ -315,16 +370,15 @@ export function AudioTagEditor() {
         const u = updates[f.id];
         if (!u) return f;
         const nextTags: AudioTag = { ...f.savedTags };
-        const nextDeleted: string[] = [];
-        for (const [k, v] of Object.entries(u)) {
+        for (const [rawKey, v] of Object.entries(u)) {
+          const k = normalizeTagKey(rawKey);
           if (v === null) {
-            nextDeleted.push(k);
-            delete nextTags[k];
+            nextTags[k] = "";
           } else {
             nextTags[k] = String(v);
           }
         }
-        return { ...f, tempTags: nextTags, tempDeleted: nextDeleted };
+        return { ...f, tempTags: nextTags, tempDeleted: [] };
       })
     );
   }, []);
@@ -399,35 +453,66 @@ export function AudioTagEditor() {
   const fileExt = (name: string) => name.split(".").pop()?.toUpperCase() ?? "?";
 
   const dirtyFiles = files.filter((f) => {
-    if (f.tempDeleted.length > 0) return true;
     if (!f.tempTags) return false;
     return Object.keys({ ...f.savedTags, ...f.tempTags }).some(
-      (k) => (f.tempTags![k] ?? "") !== (f.savedTags[k] ?? "")
+      (k) => getTagValue(f.tempTags, k) !== getTagValue(f.savedTags, k)
     );
   });
 
-  const presentKeys = new Set<string>([
-    ...Object.keys(selectedFile.savedTags),
-    ...(selectedFile.tempTags ? Object.keys(selectedFile.tempTags) : []),
-  ]);
-  const defaultOrdered = defaultFieldKeys.map((k) => {
-    const known = TAG_FIELDS.find((f) => f.key === k);
-    if (known) return known;
-    const extra = extraFields.find((f) => f.key === k);
-    return { key: k, label: extra?.label ?? k };
-  });
-  const nonDefaultPresent = TAG_FIELDS.filter(
-    (f) => !defaultFieldKeys.includes(f.key) && presentKeys.has(f.key)
+  const labelForKey = useCallback(
+    (key: string) => extraFields.find((f) => f.key === key)?.label ?? formatTagLabel(key),
+    [extraFields]
   );
-  const remainingExtras = extraFields.filter((f) => !defaultFieldKeys.includes(f.key));
-  const allFields = [...defaultOrdered, ...nonDefaultPresent, ...remainingExtras];
+
+  const buildFieldsForFile = useCallback(
+    (file: AudioFile) => {
+      const presentKeys = new Set<string>();
+      for (const rawKey of Object.keys(file.savedTags)) {
+        const key = normalizeTagKey(rawKey);
+        if (getTagValue(file.savedTags, key) !== "") presentKeys.add(key);
+      }
+      if (file.tempTags) {
+        for (const rawKey of Object.keys(file.tempTags)) {
+          const key = normalizeTagKey(rawKey);
+          if (getTagValue(file.savedTags, key) !== "" || getTagValue(file.tempTags, key) !== "") {
+            presentKeys.add(key);
+          }
+        }
+      }
+      const usedKeys = new Set<string>();
+      const fields: { key: string; label: string }[] = [];
+
+      for (const key of defaultFieldKeys.map(normalizeTagKey)) {
+        if (usedKeys.has(key)) continue;
+        fields.push({ key, label: labelForKey(key) });
+        usedKeys.add(key);
+      }
+
+      for (const key of presentKeys) {
+        if (usedKeys.has(key)) continue;
+        fields.push({ key, label: labelForKey(key) });
+        usedKeys.add(key);
+      }
+
+      for (const { key: rawKey, label } of extraFields) {
+        const key = normalizeTagKey(rawKey);
+        if (usedKeys.has(key)) continue;
+        fields.push({ key, label });
+        usedKeys.add(key);
+      }
+
+      return fields;
+    },
+    [defaultFieldKeys, extraFields, labelForKey]
+  );
+  const allFields = buildFieldsForFile(selectedFile);
 
   const confirmAddField = () => {
     const raw = newFieldName.trim();
     if (!raw) { setIsAdding(false); setNewFieldName(""); return; }
-    const key = raw.toLowerCase().replace(/\s+/g, "_");
+    const key = normalizeTagKey(raw.toLowerCase().replace(/\s+/g, "_"));
     if (allFields.some((f) => f.key === key)) { setIsAdding(false); setNewFieldName(""); return; }
-    setExtraFields((prev) => [...prev, { key, label: raw }]);
+    setExtraFields((prev) => (prev.some((f) => f.key === key) ? prev : [...prev, { key, label: raw }]));
     updateTempField(key, "");
     setIsAdding(false);
     setNewFieldName("");
@@ -439,9 +524,12 @@ export function AudioTagEditor() {
       { key: "openai", label: "OpenAI" },
     ];
     const removeDefault = (k: string) =>
-      setDefaultFieldKeys((prev) => prev.filter((x) => x !== k));
+      setDefaultFieldKeys((prev) => prev.filter((x) => normalizeTagKey(x) !== k));
     const addDefault = (k: string) =>
-      setDefaultFieldKeys((prev) => (prev.includes(k) ? prev : [...prev, k]));
+      setDefaultFieldKeys((prev) => {
+        const key = normalizeTagKey(k);
+        return prev.map(normalizeTagKey).includes(key) ? prev : [...prev, key];
+      });
     const reorderDefault = (from: number, to: number) => {
       if (from === to) return;
       setDefaultFieldKeys((prev) => {
@@ -451,10 +539,7 @@ export function AudioTagEditor() {
         return next;
       });
     };
-    const labelOf = (k: string) =>
-      TAG_FIELDS.find((f) => f.key === k)?.label ??
-      extraFields.find((f) => f.key === k)?.label ??
-      k;
+    const labelOf = (k: string) => labelForKey(k);
     return (
       <div className="flex flex-col h-screen w-full bg-[#f6f8fa] text-[#1f2328] font-mono overflow-hidden border-t border-[#d0d7de]">
         <div className={`${HEADER_H} px-4 flex items-center gap-2 border-b border-[#d0d7de] bg-white flex-shrink-0`}>
@@ -495,12 +580,13 @@ export function AudioTagEditor() {
                 <div>
                   <h2 className="text-sm text-[#1f2328]">Default Fields</h2>
                   <p className="text-xs text-[#656d76] mt-1">
-                    These fields always appear in the editor — even when the source file has no value — and cannot be deleted (only emptied). Drag to reorder; the editor displays them in this order, followed by any other tags found in the file.
+                    Default fields always appear in this order, even when empty. Other fields appear after them only while they have content; clearing an other field removes it on save.
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  {defaultFieldKeys.map((key, idx) => {
+                  {defaultFieldKeys.map((rawKey, idx) => {
+                    const key = normalizeTagKey(rawKey);
                     const isOver = dragOverIdx === idx;
                     return (
                       <div
@@ -548,8 +634,8 @@ export function AudioTagEditor() {
                           if (e.key === "Enter") {
                             const raw = newDefaultName.trim();
                             if (!raw) { setAddingDefault(false); return; }
-                            const key = raw.toLowerCase().replace(/\s+/g, "_");
-                            if (!defaultFieldKeys.includes(key)) {
+                            const key = normalizeTagKey(raw.toLowerCase().replace(/\s+/g, "_"));
+                            if (!defaultFieldKeys.map(normalizeTagKey).includes(key)) {
                               addDefault(key);
                               if (
                                 !TAG_FIELDS.some((f) => f.key === key) &&
@@ -658,10 +744,9 @@ export function AudioTagEditor() {
           {files.map((f) => {
             const isSelected = f.id === selectedId;
             const isDirty = (() => {
-              if (f.tempDeleted.length > 0) return true;
               if (!f.tempTags) return false;
               return Object.keys({ ...f.savedTags, ...f.tempTags }).some(
-                (k) => (f.tempTags![k] ?? "") !== (f.savedTags[k] ?? "")
+                (k) => getTagValue(f.tempTags, k) !== getTagValue(f.savedTags, k)
               );
             })();
             return (
@@ -739,10 +824,9 @@ export function AudioTagEditor() {
         <div className="flex-1 overflow-y-auto thin-scrollbar">
           <div className="p-4 space-y-3">
             {allFields.map(({ key, label }) => {
-              const origVal = selectedFile.savedTags[key] ?? "";
-              const editVal = effectiveTags[key] ?? "";
-              const isDeleted = selectedFile.tempDeleted.includes(key);
-              const status = getFieldStatus(origVal, editVal, isDeleted);
+              const origVal = getTagValue(selectedFile.savedTags, key);
+              const editVal = getTagValue(effectiveTags, key);
+              const status = getFieldStatus(origVal, editVal);
               const badge = STATUS_BADGE[status];
 
               return (
@@ -776,24 +860,15 @@ export function AudioTagEditor() {
                       )}
                     </div>
                     <div className={`flex-1 flex items-start rounded border transition-colors ${STATUS_INPUT_STYLE[status]}`}>
-                      {isDeleted ? (
-                        <div
-                          className="flex-1 px-3 py-2 text-sm line-through min-h-[36px] cursor-pointer whitespace-pre-wrap break-words"
-                          onClick={() => setFocusedField(key)}
-                        >
-                          {origVal || <span className="italic opacity-60">empty</span>}
-                        </div>
-                      ) : (
-                        <AutoTextarea
-                          value={editVal}
-                          onChange={(v) => updateTempField(key, v)}
-                          onFocus={() => setFocusedField(key)}
-                          onBlur={() => setTimeout(() => setFocusedField((f) => f === key ? null : f), 150)}
-                          placeholder="empty"
-                          className="flex-1 min-h-[36px] w-full"
-                        />
-                      )}
-                      {status !== "unchanged" && !isDeleted && focusedField === key && (
+                      <AutoTextarea
+                        value={editVal}
+                        onChange={(v) => updateTempField(key, v)}
+                        onFocus={() => setFocusedField(key)}
+                        onBlur={() => setTimeout(() => setFocusedField((f) => f === key ? null : f), 150)}
+                        placeholder="empty"
+                        className="flex-1 min-h-[36px] w-full"
+                      />
+                      {status !== "unchanged" && focusedField === key && (
                         <button
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => updateTempField(key, origVal)}
@@ -804,20 +879,11 @@ export function AudioTagEditor() {
                         </button>
                       )}
                       {focusedField === key && (
-                        isDeleted ? (
-                          <button
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => restoreField(key)}
-                            title="Restore field"
-                            className="px-2 pt-2 opacity-70 hover:opacity-100 transition-opacity flex-shrink-0"
-                          >
-                            <RotateCcw size={14} />
-                          </button>
-                        ) : defaultFieldKeys.includes(key) ? null : (
+                        defaultFieldKeys.map(normalizeTagKey).includes(key) ? null : (
                           <button
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => deleteField(key)}
-                            title="Delete field"
+                            title="Clear field"
                             className="px-2 pt-2 opacity-50 hover:opacity-100 hover:text-[#cf222e] transition-opacity flex-shrink-0"
                           >
                             <Trash2 size={14} />
@@ -934,10 +1000,9 @@ export function AudioTagEditor() {
                 <div className="px-4 py-3 text-[10px] text-[#8c959f] italic">No pending changes</div>
               )}
               {dirtyFiles.map((f) => {
-                const changes = allFields.filter(({ key }) => {
-                  if (f.tempDeleted.includes(key)) return true;
-                  const orig = f.savedTags[key] ?? "";
-                  const edit = f.tempTags ? (f.tempTags[key] ?? "") : orig;
+                const changes = buildFieldsForFile(f).filter(({ key }) => {
+                  const orig = getTagValue(f.savedTags, key);
+                  const edit = f.tempTags ? getTagValue(f.tempTags, key) : orig;
                   return orig !== edit;
                 });
                 return (
@@ -950,9 +1015,8 @@ export function AudioTagEditor() {
                     <div className="mt-1 space-y-0.5">
                       {changes.map(({ key, label }) => {
                         const s = getFieldStatus(
-                          f.savedTags[key] ?? "",
-                          f.tempTags ? (f.tempTags[key] ?? "") : (f.savedTags[key] ?? ""),
-                          f.tempDeleted.includes(key)
+                          getTagValue(f.savedTags, key),
+                          f.tempTags ? getTagValue(f.tempTags, key) : getTagValue(f.savedTags, key)
                         );
                         return (
                           <div key={key} className="flex items-center gap-1">

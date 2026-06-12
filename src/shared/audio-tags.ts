@@ -20,4 +20,5 @@ export interface AudioFile {
 
 export interface SaveTagsResult {
   ok: true;
+  tags: AudioTag;
 }

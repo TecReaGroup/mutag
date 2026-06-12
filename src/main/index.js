@@ -67,20 +67,100 @@ function firstString(value) {
   return value == null ? "" : String(value);
 }
 
+// Maps from our tag keys to node-taglib-sharp Tag properties, grouped by value shape.
+const ARRAY_TAG_PROPS = {
+  artist: "performers",
+  genre: "genres",
+  album_artist: "albumArtists",
+  composer: "composers",
+};
+
+const UINT_TAG_PROPS = {
+  year: "year",
+  bpm: "beatsPerMinute",
+  track_number: "track",
+  track_total: "trackCount",
+  disc_number: "disc",
+  disc_total: "discCount",
+};
+
+const STRING_TAG_PROPS = {
+  title: "title",
+  album: "album",
+  comment: "comment",
+  lyrics: "lyrics",
+  subtitle: "subtitle",
+  description: "description",
+  grouping: "grouping",
+  copyright: "copyright",
+  conductor: "conductor",
+  remixedby: "remixedBy",
+  publisher: "publisher",
+  isrc: "isrc",
+  initial_key: "initialKey",
+  musicbrainz_artist_id: "musicBrainzArtistId",
+  musicbrainz_album_id: "musicBrainzReleaseId",
+  musicbrainz_albumartist_id: "musicBrainzReleaseArtistId",
+  musicbrainz_track_id: "musicBrainzTrackId",
+  musicbrainz_release_group_id: "musicBrainzReleaseGroupId",
+  musicbrainz_disc_id: "musicBrainzDiscId",
+  musicbrainz_release_status: "musicBrainzReleaseStatus",
+  musicbrainz_release_type: "musicBrainzReleaseType",
+  musicbrainz_release_country: "musicBrainzReleaseCountry",
+  musicip_id: "musicIpId",
+  amazon_id: "amazonId",
+};
+
+const TAG_KEY_ALIASES = {
+  albumartist: "album_artist",
+  track: "track_number",
+  tracktotal: "track_total",
+  disc: "disc_number",
+  disctotal: "disc_total",
+  initialkey: "initial_key",
+  musicbrainzalbumid: "musicbrainz_album_id",
+  musicbrainzalbumartistid: "musicbrainz_albumartist_id",
+  musicbrainzartistid: "musicbrainz_artist_id",
+  musicbrainztrackid: "musicbrainz_track_id",
+};
+
+// Fields that are always present in the returned tags, even when empty.
+const DEFAULT_TAG_KEYS = ["title", "artist", "album", "year", "genre", "bpm", "comment", "lyrics"];
+
+const ALL_TAG_KEYS = [
+  ...Object.keys(ARRAY_TAG_PROPS),
+  ...Object.keys(UINT_TAG_PROPS),
+  ...Object.keys(STRING_TAG_PROPS),
+];
+
+function readTagValue(tag, key) {
+  key = TAG_KEY_ALIASES[key] ?? key;
+  if (key in ARRAY_TAG_PROPS) return firstString(tag[ARRAY_TAG_PROPS[key]]);
+  if (key in UINT_TAG_PROPS) {
+    const value = tag[UINT_TAG_PROPS[key]];
+    return value ? String(value) : "";
+  }
+  if (key in STRING_TAG_PROPS) return firstString(tag[STRING_TAG_PROPS[key]]);
+  return "";
+}
+
 function readTags(filePath) {
   const file = File.createFromPath(filePath);
   try {
     const tag = file.tag;
-    return {
-      title: firstString(tag.title),
-      artist: firstString(tag.performers),
-      album: firstString(tag.album),
-      year: tag.year ? String(tag.year) : "",
-      genre: firstString(tag.genres),
-      bpm: tag.beatsPerMinute ? String(tag.beatsPerMinute) : "",
-      comment: firstString(tag.comment),
-      lyrics: firstString(tag.lyrics),
-    };
+    const tags = {};
+
+    // Default fields are always present, even when empty.
+    for (const key of DEFAULT_TAG_KEYS) tags[key] = readTagValue(tag, key);
+
+    // Any other supported tag is included only when the file actually has a value.
+    for (const key of ALL_TAG_KEYS) {
+      if (key in tags) continue;
+      const value = readTagValue(tag, key);
+      if (value !== "") tags[key] = value;
+    }
+
+    return tags;
   } finally {
     file.dispose();
   }
@@ -102,42 +182,39 @@ function setStringArray(tag, key, value) {
   tag[key] = normalized ? [normalized] : [];
 }
 
+function clearTagValue(tag, key) {
+  key = TAG_KEY_ALIASES[key] ?? key;
+  if (key in ARRAY_TAG_PROPS) setStringArray(tag, ARRAY_TAG_PROPS[key], "");
+  else if (key in UINT_TAG_PROPS) tag[UINT_TAG_PROPS[key]] = 0;
+  else if (key in STRING_TAG_PROPS) setString(tag, STRING_TAG_PROPS[key], "");
+}
+
+function writeTagValue(tag, key, value) {
+  key = TAG_KEY_ALIASES[key] ?? key;
+  if (key in ARRAY_TAG_PROPS) setStringArray(tag, ARRAY_TAG_PROPS[key], value);
+  else if (key in UINT_TAG_PROPS) tag[UINT_TAG_PROPS[key]] = parsePositiveInt(value);
+  else if (key in STRING_TAG_PROPS) setString(tag, STRING_TAG_PROPS[key], value);
+}
+
 function writeTags(filePath, tags, deleted) {
   const file = File.createFromPath(filePath);
   try {
     const tag = file.tag;
-    const deletedSet = new Set(Array.isArray(deleted) ? deleted : []);
+    const deletedSet = new Set(Array.isArray(deleted) ? deleted.map((key) => TAG_KEY_ALIASES[key] ?? key) : []);
     const next = tags && typeof tags === "object" ? tags : {};
 
-    if (deletedSet.has("title")) setString(tag, "title", "");
-    else if ("title" in next) setString(tag, "title", next.title);
-
-    if (deletedSet.has("artist")) setStringArray(tag, "performers", "");
-    else if ("artist" in next) setStringArray(tag, "performers", next.artist);
-
-    if (deletedSet.has("album")) setString(tag, "album", "");
-    else if ("album" in next) setString(tag, "album", next.album);
-
-    if (deletedSet.has("year")) tag.year = 0;
-    else if ("year" in next) tag.year = parsePositiveInt(next.year);
-
-    if (deletedSet.has("genre")) setStringArray(tag, "genres", "");
-    else if ("genre" in next) setStringArray(tag, "genres", next.genre);
-
-    if (deletedSet.has("bpm")) tag.beatsPerMinute = 0;
-    else if ("bpm" in next) tag.beatsPerMinute = parsePositiveInt(next.bpm);
-
-    if (deletedSet.has("comment")) setString(tag, "comment", "");
-    else if ("comment" in next) setString(tag, "comment", next.comment);
-
-    if (deletedSet.has("lyrics")) setString(tag, "lyrics", "");
-    else if ("lyrics" in next) setString(tag, "lyrics", next.lyrics);
+    for (const key of ALL_TAG_KEYS) {
+      const value = next[key] ?? "";
+      if (deletedSet.has(key) || value === "") clearTagValue(tag, key);
+      else if (key in next) writeTagValue(tag, key, value);
+    }
 
     file.save();
-    return { ok: true };
   } finally {
     file.dispose();
   }
+
+  return { ok: true, tags: readTags(filePath) };
 }
 
 ipcMain.handle("audio-tags:open-folder", async () => {
