@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, FolderOpen, Settings, ArrowLeft, GripVertical } from "lucide-react";
+import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, FolderOpen, Settings, ArrowLeft, GripVertical, Undo2 } from "lucide-react";
 import type { AudioFile, AudioTag } from "@/shared/audio-tags";
 
 const INITIAL_FILES: AudioFile[] = [
@@ -521,7 +521,7 @@ export function AudioTagEditor() {
   if (showSettings) {
     const categories: { key: "audio-tag" | "openai"; label: string }[] = [
       { key: "audio-tag", label: "Audio Tag" },
-      { key: "openai", label: "OpenAI" },
+      { key: "openai", label: "LLM" },
     ];
     const removeDefault = (k: string) =>
       setDefaultFieldKeys((prev) => prev.filter((x) => normalizeTagKey(x) !== k));
@@ -868,27 +868,27 @@ export function AudioTagEditor() {
                         placeholder="empty"
                         className="flex-1 min-h-[36px] w-full"
                       />
-                      {status !== "unchanged" && focusedField === key && (
-                        <button
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => updateTempField(key, origVal)}
-                          title="Revert field"
-                          className="px-2 pt-2 opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"
-                        >
-                          ↩
-                        </button>
-                      )}
                       {focusedField === key && (
-                        defaultFieldKeys.map(normalizeTagKey).includes(key) ? null : (
+                        <div className="self-stretch flex items-center flex-shrink-0">
+                          {status !== "unchanged" && (
+                            <button
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => updateTempField(key, origVal)}
+                              title="Revert field"
+                              className="h-full w-8 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+                            >
+                              <Undo2 size={14} />
+                            </button>
+                          )}
                           <button
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => deleteField(key)}
                             title="Clear field"
-                            className="px-2 pt-2 opacity-50 hover:opacity-100 hover:text-[#cf222e] transition-opacity flex-shrink-0"
+                            className="h-full px-2 opacity-50 hover:opacity-100 hover:text-[#cf222e] transition-opacity"
                           >
                             <Trash2 size={14} />
                           </button>
-                        )
+                        </div>
                       )}
                     </div>
                   </div>
