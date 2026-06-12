@@ -18,10 +18,17 @@ export interface AudioFile {
   tempDeleted: string[];
 }
 
-export interface SaveTagsResult {
-  ok: true;
-  tags: AudioTag;
-}
+export type SaveTagsResult =
+  | {
+      ok: true;
+      tags: AudioTag;
+      path: string;
+      name: string;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
 
 export interface MutagConfig {
   lastFolder: string;

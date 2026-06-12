@@ -122,6 +122,13 @@ function getTagValue(tags: AudioTag | null | undefined, key: string) {
   return tags[normalized] ?? tags[key] ?? "";
 }
 
+function formatSaveError(err: unknown) {
+  const raw = err instanceof Error ? err.message : String(err);
+  return raw
+    .replace(/^Error invoking remote method '[^']+':\s*/i, "")
+    .replace(/^Error:\s*/i, "");
+}
+
 type DiffStatus = "unchanged" | "modified" | "added" | "deleted";
 
 function getFieldStatus(original: string, edited: string): DiffStatus {
@@ -266,10 +273,12 @@ export function AudioTagEditor() {
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [projectRoot, setProjectRoot] = useState("");
   const [configLoaded, setConfigLoaded] = useState(false);
   const projectSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const configSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileButtonRefs = useRef(new Map<string, HTMLButtonElement>());
 
   const selectedIndex = files.findIndex((f) => f.id === selectedId);
   const hasSelectedFile = selectedIndex >= 0;
@@ -292,7 +301,18 @@ export function AudioTagEditor() {
   useEffect(() => {
     setIsAdding(false);
     setFocusedField(null);
+    setSaveError(null);
   }, [selectedId]);
+
+  useEffect(() => {
+    fileButtonRefs.current.get(selectedId)?.scrollIntoView({ block: "nearest" });
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!saveError) return;
+    const timer = setTimeout(() => setSaveError(null), 3500);
+    return () => clearTimeout(timer);
+  }, [saveError]);
 
   useEffect(() => {
     setIsAdding(false);
@@ -394,6 +414,7 @@ export function AudioTagEditor() {
   const updateTempField = useCallback(
     (field: string, value: string) => {
       const key = normalizeTagKey(field);
+      setSaveError(null);
       setFiles((prev) =>
         prev.map((f) => {
           if (f.id !== selectedId) return f;
@@ -423,12 +444,17 @@ export function AudioTagEditor() {
     const next: AudioTag = { ...(current.tempTags ?? current.savedTags) } as AudioTag;
 
     let savedTags = next;
+    let savedPath = current.path;
+    let savedName = current.name;
     if (window.audioTagApi) {
       try {
         const result = await window.audioTagApi.saveTags(current.path, next, []);
+        if (!result.ok) { setSaveError(result.error); return; }
         savedTags = result.tags;
+        savedPath = result.path;
+        savedName = result.name;
       } catch (err) {
-        window.alert(`Failed to save tags: ${err instanceof Error ? err.message : String(err)}`);
+        setSaveError(formatSaveError(err));
         return;
       }
     }
@@ -436,9 +462,10 @@ export function AudioTagEditor() {
     setFiles((prev) =>
       prev.map((f) => {
         if (f.id !== selectedId) return f;
-        return { ...f, savedTags, tempTags: null, tempDeleted: [] };
+        return { ...f, id: savedPath, path: savedPath, name: savedName, savedTags, tempTags: null, tempDeleted: [] };
       })
     );
+    setSelectedId(savedPath);
     setExtraFields((prev) => prev.filter(({ key }) => getTagValue(savedTags, key) !== ""));
   }, [files, selectedId]);
 
@@ -454,17 +481,18 @@ export function AudioTagEditor() {
 
   const acceptAll = useCallback(async () => {
     const changedFiles = files.filter((f) => f.tempTags !== null);
-    const savedById = new Map<string, AudioTag>();
+    const savedById = new Map<string, { tags: AudioTag; path: string; name: string }>();
 
     if (window.audioTagApi) {
       try {
         for (const f of changedFiles) {
           const next: AudioTag = { ...(f.tempTags ?? f.savedTags) } as AudioTag;
           const result = await window.audioTagApi.saveTags(f.path, next, []);
-          savedById.set(f.id, result.tags);
+          if (!result.ok) { setSaveError(result.error); return; }
+          savedById.set(f.id, { tags: result.tags, path: result.path, name: result.name });
         }
       } catch (err) {
-        window.alert(`Failed to save tags: ${err instanceof Error ? err.message : String(err)}`);
+        setSaveError(formatSaveError(err));
         return;
       }
     }
@@ -472,14 +500,18 @@ export function AudioTagEditor() {
     setFiles((prev) =>
       prev.map((f) => {
         if (f.tempTags === null) return f;
-        const savedTags = savedById.get(f.id);
-        if (savedTags) return { ...f, savedTags, tempTags: null, tempDeleted: [] };
+        const saved = savedById.get(f.id);
+        if (saved) return { ...f, id: saved.path, path: saved.path, name: saved.name, savedTags: saved.tags, tempTags: null, tempDeleted: [] };
         const next: AudioTag = { ...(f.tempTags ?? f.savedTags) } as AudioTag;
         return { ...f, savedTags: next, tempTags: null, tempDeleted: [] };
       })
     );
+    setSelectedId((prevId) => {
+      const renamed = savedById.get(prevId);
+      return renamed ? renamed.path : prevId;
+    });
     setExtraFields((prev) =>
-      prev.filter(({ key }) => files.some((f) => getTagValue(savedById.get(f.id) ?? f.savedTags, key) !== ""))
+      prev.filter(({ key }) => files.some((f) => getTagValue(savedById.get(f.id)?.tags ?? f.savedTags, key) !== ""))
     );
   }, [files]);
 
@@ -899,6 +931,10 @@ export function AudioTagEditor() {
             return (
               <button
                 key={f.id}
+                ref={(node) => {
+                  if (node) fileButtonRefs.current.set(f.id, node);
+                  else fileButtonRefs.current.delete(f.id);
+                }}
                 onClick={() => setSelectedId(f.id)}
                 className={`w-full text-left px-3 py-2 flex items-start gap-2 transition-colors ${
                   isSelected
@@ -930,14 +966,32 @@ export function AudioTagEditor() {
       <ResizeDivider extend="right" onDrag={(dx) => setLeftW((w) => Math.max(120, Math.min(480, w + dx)))} />
 
       {/* ── Main: Original + Modified ── */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-white">
+      <div className="relative flex-1 flex flex-col overflow-hidden bg-white">
+        {saveError && (
+          <div className="absolute bottom-14 left-1/2 z-30 w-[min(520px,calc(100%-32px))] -translate-x-1/2 rounded border border-[#cf222e] bg-[#ffebe9] shadow-lg">
+            <div className="flex items-start gap-3 px-3 py-2">
+              <div className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-[#cf222e]" />
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-[#82071e]">Save failed</div>
+                <div className="mt-0.5 text-xs text-[#82071e] break-words">{saveError}</div>
+              </div>
+              <button
+                onClick={() => setSaveError(null)}
+                className="h-6 w-6 flex-shrink-0 flex items-center justify-center rounded text-[#82071e] hover:bg-[#ffd7d5] transition-colors"
+                title="Close"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          </div>
+        )}
         {/* Top bar — Row 1, HEADER_H to match side panels */}
-        <div className={`${HEADER_H} px-5 border-b border-[#d0d7de] flex items-center justify-between flex-shrink-0`}>
-          <div>
+        <div className={`${HEADER_H} px-5 border-b border-[#d0d7de] flex items-center gap-4 flex-shrink-0`}>
+          <div className="min-w-0 flex-1 whitespace-nowrap truncate">
             <span className="text-sm text-[#1f2328]">{selectedFile.name}</span>
             <span className="ml-2 text-xs text-[#8c959f]">{selectedFile.path}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-shrink-0 items-center gap-2">
             {hasPendingChanges && (
               <>
                 <span className="text-xs text-[#9a6700]">● unsaved changes</span>

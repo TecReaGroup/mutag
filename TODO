@@ -7,9 +7,12 @@
 - [x] settings openai -> LLM
 - [x] 点击add field，向上弹出选择菜单，点击选择 field name （需要时上方未出现过的字段）
 - [x] 方向键支持：上和左 绑定按钮 Prev, 下和右 绑定按钮 Next，就是点击后可以直接切换 file
-- [ ] 修改 title 并且保存后，重命名文件格式为 track_number title.mp3 (如果 track_number 存在，需要 track_number 为两位数，就是 类似于 1 需要补成 01，如果 track_number 不存在 直接 title.mp3)
+- [x] 修改 title 并且保存后，重命名文件格式为 track_number title.mp3 (如果 track_number 存在，需要 track_number 为两位数，就是 类似于 1 需要补成 01，如果 track_number 不存在 直接 title.mp3)
+- [x] title 不能为空，并且同一个目录下不能有相同的 title 的 audio 文件，不然就 save 时保存，注意是 save 时，边界检查，而不是字段内
 - [x] fix：audio files 下面的滚轮无法选中然后拖拽，会直接变成布局左右移动，而tag里面的就正常？
+- [x] 中间的标题（例如：01 Grace Falls Upon Us.m4aC:\Users\Heping Wang\Desktop\music\矽谷生命河灵粮堂\Heaven Opened\01 Grace Falls Upon Us.m4a） 过长后面的就 ...，不要换行，或者和 右侧的预留字段（unsaved changes）发生冲突
+- [x] 按钮，键盘切换文件时，左侧 audio files 列表需要滚动到当前选中的文件
 
 ## 待定
 
-- [ ] 扫描文件，要求是不断添加到audio files下面的列表，防止由于扫描太慢而界面显示要等很久
+- [ ] 扫描文件，要求是不断添加到 audio files下面的列表，防止由于扫描太慢而界面显示要等很久，就是不要让 app 里面是白屏，至少显示骨架

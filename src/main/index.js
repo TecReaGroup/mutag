@@ -226,6 +226,90 @@ function parsePositiveInt(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+function sanitizeFileNamePart(value) {
+  return String(value ?? "")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/g, "");
+}
+
+async function pathExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeTitleForCompare(value) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+async function validateTitleBeforeSave(filePath, tags) {
+  const title = normalizeTitleForCompare(tags?.title);
+  if (!title) {
+    throw new Error("Title cannot be empty");
+  }
+
+  const dir = path.dirname(filePath);
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    console.warn(`Failed to read directory for title validation: ${dir}`, error);
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
+    const siblingPath = path.join(dir, entry.name);
+    if (path.resolve(siblingPath) === path.resolve(filePath)) continue;
+
+    try {
+      if (normalizeTitleForCompare(readTags(siblingPath).title) === title) {
+        throw new Error(`Another audio file in this folder already has the title "${String(tags.title).trim()}"`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Another audio file")) throw error;
+      console.warn(`Skipping unreadable audio file during title validation: ${siblingPath}`, error);
+    }
+  }
+}
+
+async function renameFileForTitle(filePath, originalTags, savedTags) {
+  const titleChanged = firstString(originalTags?.title).trim() !== firstString(savedTags?.title).trim();
+  const title = sanitizeFileNamePart(savedTags?.title);
+  if (!titleChanged || !title) return filePath;
+
+  const track = parsePositiveInt(savedTags?.track_number);
+  const prefix = track > 0 ? `${String(track).padStart(2, "0")} ` : "";
+  const dir = path.dirname(filePath);
+  const ext = path.extname(filePath);
+  const nextPath = path.join(dir, `${prefix}${title}${ext}`);
+
+  if (path.resolve(nextPath) === path.resolve(filePath)) return filePath;
+  if (await pathExists(nextPath)) {
+    throw new Error(`A file named "${path.basename(nextPath)}" already exists in this folder`);
+  }
+  await fs.rename(filePath, nextPath);
+  return nextPath;
+}
+
+async function validateRenameBeforeSave(filePath, originalTags, nextTags) {
+  const titleChanged = firstString(originalTags?.title).trim() !== firstString(nextTags?.title).trim();
+  const title = sanitizeFileNamePart(nextTags?.title);
+  if (!titleChanged || !title) return;
+
+  const track = parsePositiveInt(nextTags?.track_number);
+  const prefix = track > 0 ? `${String(track).padStart(2, "0")} ` : "";
+  const nextPath = path.join(path.dirname(filePath), `${prefix}${title}${path.extname(filePath)}`);
+  if (path.resolve(nextPath) !== path.resolve(filePath) && await pathExists(nextPath)) {
+    throw new Error(`A file named "${path.basename(nextPath)}" already exists in this folder`);
+  }
+}
+
 function setString(tag, key, value) {
   tag[key] = String(value ?? "");
 }
@@ -249,7 +333,10 @@ function writeTagValue(tag, key, value) {
   else if (key in STRING_TAG_PROPS) setString(tag, STRING_TAG_PROPS[key], value);
 }
 
-function writeTags(filePath, tags, deleted) {
+async function writeTags(filePath, tags, deleted) {
+  await validateTitleBeforeSave(filePath, tags);
+  const originalTags = readTags(filePath);
+  await validateRenameBeforeSave(filePath, originalTags, tags);
   const file = File.createFromPath(filePath);
   try {
     const tag = file.tag;
@@ -267,7 +354,9 @@ function writeTags(filePath, tags, deleted) {
     file.dispose();
   }
 
-  return { ok: true, tags: readTags(filePath) };
+  const savedTags = readTags(filePath);
+  const nextPath = await renameFileForTitle(filePath, originalTags, savedTags);
+  return { ok: true, tags: readTags(nextPath), path: nextPath, name: path.basename(nextPath) };
 }
 
 ipcMain.handle("audio-tags:open-folder", async () => {
@@ -309,10 +398,14 @@ ipcMain.handle("audio-tags:save-project-state", async (_event, payload) => {
 });
 
 ipcMain.handle("audio-tags:save-tags", async (_event, payload) => {
-  if (!payload || typeof payload.path !== "string") {
-    throw new Error("Missing audio file path.");
+  try {
+    if (!payload || typeof payload.path !== "string") {
+      throw new Error("Missing audio file path.");
+    }
+    return await writeTags(payload.path, payload.tags, payload.deleted);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
-  return writeTags(payload.path, payload.tags, payload.deleted);
 });
 
 app.whenReady().then(() => {
