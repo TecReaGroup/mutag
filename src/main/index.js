@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
-const { File } = require("node-taglib-sharp");
+const { File, TagTypes, Id3v2FrameClassType } = require("node-taglib-sharp");
 
 app.name = "mutag";
 
@@ -105,7 +105,6 @@ async function scanFolder(root) {
         path: filePath,
         savedTags: readTags(filePath),
         tempTags: persisted?.tempTags ?? null,
-        tempDeleted: Array.isArray(persisted?.tempDeleted) ? persisted.tempDeleted : [],
       });
     } catch (error) {
       console.warn(`Skipping unreadable audio file: ${filePath}`, error);
@@ -247,6 +246,37 @@ function normalizeTitleForCompare(value) {
   return String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
+function getSavedTagValue(tags, key) {
+  key = TAG_KEY_ALIASES[key] ?? key;
+  return tags?.[key] == null ? "" : String(tags[key]);
+}
+
+function normalizeTagValue(value) {
+  return value == null ? "" : String(value);
+}
+
+function buildTagChanges(originalTags, nextTags) {
+  const next = nextTags && typeof nextTags === "object" ? nextTags : {};
+  const changes = [];
+
+  for (const key of ALL_TAG_KEYS) {
+    const originalValue = getSavedTagValue(originalTags, key);
+    const nextValue = normalizeTagValue(next[key] ?? originalValue);
+
+    if (nextValue !== originalValue) {
+      changes.push({ key, value: nextValue });
+    }
+  }
+
+  return changes;
+}
+
+function applyTagChanges(originalTags, changes) {
+  const savedTags = { ...originalTags };
+  for (const { key, value } of changes) savedTags[key] = value;
+  return savedTags;
+}
+
 async function validateTitleBeforeSave(filePath, tags) {
   const title = normalizeTitleForCompare(tags?.title);
   if (!title) {
@@ -311,11 +341,11 @@ async function validateRenameBeforeSave(filePath, originalTags, nextTags) {
 }
 
 function setString(tag, key, value) {
-  tag[key] = String(value ?? "");
+  tag[key] = normalizeTagValue(value);
 }
 
 function setStringArray(tag, key, value) {
-  const normalized = String(value ?? "").trim();
+  const normalized = normalizeTagValue(value).trim();
   tag[key] = normalized ? [normalized] : [];
 }
 
@@ -333,30 +363,104 @@ function writeTagValue(tag, key, value) {
   else if (key in STRING_TAG_PROPS) setString(tag, STRING_TAG_PROPS[key], value);
 }
 
-async function writeTags(filePath, tags, deleted) {
+function writeSnapshotToTag(tag, snapshot) {
+  for (const key of ALL_TAG_KEYS) {
+    const value = normalizeTagValue(snapshot[key]);
+    if (value !== "") writeTagValue(tag, key, value);
+  }
+}
+
+function repairId3v2TextFrames(file) {
+  if (!TagTypes || !Id3v2FrameClassType || typeof file.getTag !== "function") return;
+
+  const tag = file.getTag(TagTypes.Id3v2, false);
+  if (!tag || typeof tag.getFramesByClassType !== "function") return;
+
+  const textArrayFrameTypes = [
+    Id3v2FrameClassType.TextInformationFrame,
+    Id3v2FrameClassType.UserTextInformationFrame,
+    Id3v2FrameClassType.UrlLinkFrame,
+    Id3v2FrameClassType.UserUrlLinkFrame,
+  ];
+  for (const type of textArrayFrameTypes) {
+    const frames = tag.getFramesByClassType(type) ?? [];
+    for (const frame of frames) {
+      try {
+        const textFields = frame.text;
+        if (!Array.isArray(textFields)) continue;
+        const repaired = textFields.map((text) => normalizeTagValue(text));
+        if (repaired.some((text, idx) => text !== textFields[idx])) frame.text = repaired;
+      } catch {
+        // Ignore malformed optional frames; saving should be driven by supported tag fields.
+      }
+    }
+  }
+
+  const scalarTextFrameTypes = [
+    Id3v2FrameClassType.CommentsFrame,
+    Id3v2FrameClassType.UnsynchronizedLyricsFrame,
+    Id3v2FrameClassType.TermsOfUseFrame,
+  ];
+  for (const type of scalarTextFrameTypes) {
+    const frames = tag.getFramesByClassType(type) ?? [];
+    for (const frame of frames) {
+      try {
+        frame.text = normalizeTagValue(frame.text);
+        if ("description" in frame) frame.description = normalizeTagValue(frame.description);
+        if ("language" in frame) {
+          const language = normalizeTagValue(frame.language);
+          frame.language = language.length >= 3 ? language.slice(0, 3) : "XXX";
+        }
+      } catch {
+        // Ignore malformed optional frames; saving should be driven by supported tag fields.
+      }
+    }
+  }
+}
+
+async function writeTags(filePath, tags) {
   await validateTitleBeforeSave(filePath, tags);
   const originalTags = readTags(filePath);
-  await validateRenameBeforeSave(filePath, originalTags, tags);
+  const changes = buildTagChanges(originalTags, tags);
+  const savedTags = applyTagChanges(originalTags, changes);
+  await validateRenameBeforeSave(filePath, originalTags, savedTags);
   const file = File.createFromPath(filePath);
   try {
+    repairId3v2TextFrames(file);
     const tag = file.tag;
-    const deletedSet = new Set(Array.isArray(deleted) ? deleted.map((key) => TAG_KEY_ALIASES[key] ?? key) : []);
-    const next = tags && typeof tags === "object" ? tags : {};
 
-    for (const key of ALL_TAG_KEYS) {
-      const value = next[key] ?? "";
-      if (deletedSet.has(key) || value === "") clearTagValue(tag, key);
-      else if (key in next) writeTagValue(tag, key, value);
+    for (const { key, value } of changes) {
+      if (value === "") clearTagValue(tag, key);
+      else writeTagValue(tag, key, value);
     }
 
-    file.save();
+    try {
+      file.save();
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("text was not provided")) throw error;
+
+      file.removeTags(file.tagTypes);
+      let cleanTag;
+      try {
+        cleanTag = file.getTag(TagTypes.Id3v2, true);
+      } catch {
+        cleanTag = file.tag;
+      }
+      writeSnapshotToTag(cleanTag, savedTags);
+      file.save();
+    }
   } finally {
     file.dispose();
   }
 
-  const savedTags = readTags(filePath);
   const nextPath = await renameFileForTitle(filePath, originalTags, savedTags);
-  return { ok: true, tags: readTags(nextPath), path: nextPath, name: path.basename(nextPath) };
+
+  try {
+    return { ok: true, tags: readTags(nextPath), path: nextPath, name: path.basename(nextPath) };
+  } catch (error) {
+    console.warn(`Saved tags but failed to refresh metadata: ${nextPath}`, error);
+    return { ok: true, tags: savedTags, path: nextPath, name: path.basename(nextPath) };
+  }
 }
 
 ipcMain.handle("audio-tags:open-folder", async () => {
@@ -402,7 +506,7 @@ ipcMain.handle("audio-tags:save-tags", async (_event, payload) => {
     if (!payload || typeof payload.path !== "string") {
       throw new Error("Missing audio file path.");
     }
-    return await writeTags(payload.path, payload.tags, payload.deleted);
+    return await writeTags(payload.path, payload.tags);
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

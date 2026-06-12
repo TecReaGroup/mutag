@@ -7,6 +7,6 @@ contextBridge.exposeInMainWorld("audioTagApi", {
   saveConfig: (config) => ipcRenderer.invoke("audio-tags:save-config", config),
   saveProjectState: (root, state) =>
     ipcRenderer.invoke("audio-tags:save-project-state", { root, state }),
-  saveTags: (path, tags, deleted) =>
-    ipcRenderer.invoke("audio-tags:save-tags", { path, tags, deleted }),
+  saveTags: (path, tags) =>
+    ipcRenderer.invoke("audio-tags:save-tags", { path, tags }),
 });

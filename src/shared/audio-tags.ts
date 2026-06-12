@@ -15,7 +15,6 @@ export interface AudioFile {
   path: string;
   savedTags: AudioTag;
   tempTags: AudioTag | null;
-  tempDeleted: string[];
 }
 
 export type SaveTagsResult =
@@ -50,9 +49,7 @@ export interface MutagProjectState {
   selectedId: string;
   files: Record<string, {
     tempTags: AudioTag | null;
-    tempDeleted: string[];
   }>;
-  extraFields: { key: string; label: string }[];
   chatMessages: { role: "user" | "assistant" | "system"; content: string }[];
 }
 
