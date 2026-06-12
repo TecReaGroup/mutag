@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, FolderOpen, Settings, ArrowLeft, GripVertical, Undo2 } from "lucide-react";
-import type { AudioFile, AudioTag } from "@/shared/audio-tags";
+import type { AudioFile, AudioTag, MutagConfig, MutagProjectState, OpenFolderResult } from "@/shared/audio-tags";
 
 const DEMO_FILES: AudioFile[] = [
   {
@@ -223,6 +224,27 @@ function ResizeDivider({ onDrag, extend = "both" }: { onDrag: (dx: number) => vo
 const HEADER_H = "h-10";
 const INITIAL_FILES = import.meta.env.DEV ? DEMO_FILES : [];
 const INITIAL_SELECTED_ID = import.meta.env.DEV ? "2" : "";
+const DEFAULT_OPENAI = {
+  baseURL: "https://api.openai.com/v1",
+  apiKey: "",
+  model: "gpt-4o-mini",
+};
+const DEFAULT_LEFT_W = 224;
+const DEFAULT_RIGHT_W = 208;
+
+type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
+
+function applyProjectState(result: OpenFolderResult, setFiles: Dispatch<SetStateAction<AudioFile[]>>, setSelectedId: Dispatch<SetStateAction<string>>, setExtraFields: Dispatch<SetStateAction<{ key: string; label: string }[]>>, setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>) {
+  const projectState = result.projectState;
+  setFiles(result.files);
+  setSelectedId(
+    projectState?.selectedId && result.files.some((f) => f.id === projectState.selectedId)
+      ? projectState.selectedId
+      : result.files[0]?.id ?? ""
+  );
+  setExtraFields(Array.isArray(projectState?.extraFields) ? projectState.extraFields : []);
+  setChatMessages(Array.isArray(projectState?.chatMessages) ? projectState.chatMessages : []);
+}
 
 export function AudioTagEditor() {
   const [files, setFiles] = useState<AudioFile[]>(INITIAL_FILES);
@@ -230,8 +252,8 @@ export function AudioTagEditor() {
   const [extraFields, setExtraFields] = useState<{ key: string; label: string }[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
-  const [leftW, setLeftW] = useState(224);   // files panel px
-  const [rightW, setRightW] = useState(208); // pending panel px
+  const [leftW, setLeftW] = useState(DEFAULT_LEFT_W);   // files panel px
+  const [rightW, setRightW] = useState(DEFAULT_RIGHT_W); // pending panel px
   const [showSettings, setShowSettings] = useState(false);
   const [defaultFieldKeys, setDefaultFieldKeys] = useState<string[]>(() => TAG_FIELDS.map((f) => f.key));
   const [settingsCategory, setSettingsCategory] = useState<"audio-tag" | "openai">("audio-tag");
@@ -239,15 +261,15 @@ export function AudioTagEditor() {
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [addingDefault, setAddingDefault] = useState(false);
   const [rightTab, setRightTab] = useState<"pending" | "chat">("pending");
-  const [openAI, setOpenAI] = useState({
-    baseURL: "https://api.openai.com/v1",
-    apiKey: "",
-    model: "gpt-4o-mini",
-  });
-  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant" | "system"; content: string }[]>([]);
+  const [openAI, setOpenAI] = useState(DEFAULT_OPENAI);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [projectRoot, setProjectRoot] = useState("");
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const projectSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const configSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedIndex = files.findIndex((f) => f.id === selectedId);
   const hasSelectedFile = selectedIndex >= 0;
@@ -278,17 +300,95 @@ export function AudioTagEditor() {
     setFocusedField(null);
   }, [showSettings, settingsCategory]);
 
+  useEffect(() => {
+    if (!configLoaded || !window.audioTagApi) return;
+    if (configSaveTimerRef.current) clearTimeout(configSaveTimerRef.current);
+
+    const config: MutagConfig = {
+      lastFolder: projectRoot,
+      openAI,
+      audioTag: { defaultFieldKeys },
+      layout: { leftW, rightW },
+    };
+
+    configSaveTimerRef.current = setTimeout(() => {
+      window.audioTagApi?.saveConfig(config).catch((err) => console.warn("Failed to save mutag config", err));
+    }, 250);
+  }, [configLoaded, defaultFieldKeys, leftW, openAI, projectRoot, rightW]);
+
+  useEffect(() => {
+    if (!configLoaded || !projectRoot || !window.audioTagApi) return;
+    if (projectSaveTimerRef.current) clearTimeout(projectSaveTimerRef.current);
+
+    const state: MutagProjectState = {
+      selectedId,
+      files: Object.fromEntries(
+        files.map((f) => [
+          f.id,
+          {
+            tempTags: f.tempTags,
+            tempDeleted: f.tempDeleted,
+          },
+        ])
+      ),
+      extraFields,
+      chatMessages,
+    };
+
+    projectSaveTimerRef.current = setTimeout(() => {
+      window.audioTagApi?.saveProjectState(projectRoot, state).catch((err) => console.warn("Failed to save project state", err));
+    }, 250);
+  }, [chatMessages, configLoaded, extraFields, files, projectRoot, selectedId]);
+
+  useEffect(() => {
+    return () => {
+      if (configSaveTimerRef.current) clearTimeout(configSaveTimerRef.current);
+      if (projectSaveTimerRef.current) clearTimeout(projectSaveTimerRef.current);
+    };
+  }, []);
+
   const handleOpenFolder = useCallback(async () => {
     if (!window.audioTagApi) return;
 
     try {
-      const nextFiles = await window.audioTagApi.openFolder();
-      setFiles(nextFiles);
-      setSelectedId(nextFiles[0]?.id ?? "");
-      setExtraFields([]);
+      const result = await window.audioTagApi.openFolder();
+      if (!result) return;
+      setProjectRoot(result.root);
+      applyProjectState(result, setFiles, setSelectedId, setExtraFields, setChatMessages);
     } catch (err) {
       window.alert(`Failed to open folder: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }, []);
+
+  useEffect(() => {
+    if (!window.audioTagApi) { setConfigLoaded(true); return; }
+
+    let cancelled = false;
+    const restore = async () => {
+      try {
+        const config = await window.audioTagApi?.loadConfig();
+        if (cancelled) return;
+        if (config?.openAI) setOpenAI((prev) => ({ ...prev, ...config.openAI }));
+        if (Array.isArray(config?.audioTag?.defaultFieldKeys)) setDefaultFieldKeys(config.audioTag.defaultFieldKeys);
+        if (typeof config?.layout?.leftW === "number") setLeftW(config.layout.leftW);
+        if (typeof config?.layout?.rightW === "number") setRightW(config.layout.rightW);
+
+        if (config?.lastFolder) {
+          const result = await window.audioTagApi?.openLastFolder(config.lastFolder);
+          if (!cancelled && result) {
+            setProjectRoot(result.root);
+            applyProjectState(result, setFiles, setSelectedId, setExtraFields, setChatMessages);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to restore mutag state", err);
+      } finally {
+        if (!cancelled) setConfigLoaded(true);
+      }
+    };
+
+    restore();
+    return () => { cancelled = true; };
   }, []);
 
   const updateTempField = useCallback(
@@ -827,7 +927,7 @@ export function AudioTagEditor() {
         <Settings size={14} />
       </button>
 
-      <ResizeDivider extend="left" onDrag={(dx) => setLeftW((w) => Math.max(120, Math.min(480, w + dx)))} />
+      <ResizeDivider extend="right" onDrag={(dx) => setLeftW((w) => Math.max(120, Math.min(480, w + dx)))} />
 
       {/* ── Main: Original + Modified ── */}
       <div className="flex-1 flex flex-col overflow-hidden bg-white">

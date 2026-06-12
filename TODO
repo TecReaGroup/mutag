@@ -1,10 +1,15 @@
 # TODO
 
-- [ ] 本地化存储 就是上一次打开的文件夹，llm 配置, audio tag 什么的软件配置（计算机temp目录里面 名字为 mutag_config.json），还有 modified chat 的数据（打开的项目根目录下面创建一个 mutag.json 文件，每次相关编辑同步保存），就是关闭程序后下次还能恢复打开
+- [x] 本地化存储 就是上一次打开的文件夹，llm 配置, audio tag 什么的软件配置（计算机temp目录里面 名字为 mutag_config.json），至于 modified chat 的数据等数据，在打开的项目根目录下面创建一个 mutag.json 文件，每次相关编辑同步保存，然后每次打开一个文件夹时，先读取该文件夹下的 mutag.json 文件（如果存在），再扫描刷新文件数据刷新，每次编辑也需要更新，就是关闭程序后下次还能恢复打开
 - [x] tag 删除和添加逻辑
 - [x] 选择文件夹后，迭代遍历文件夹（最多5层），寻找所有音频文件，哪怕内容为空直接files也为空就行
 - [x] npm run dev 的时候才有 demo files 数据（只有开发测试的时候有）， npm run preview 或者正式发布则没有, preview 或者正式发布的时候默认进去 files 内容为空
 - [x] settings openai -> LLM
 - [x] 点击add field，向上弹出选择菜单，点击选择 field name （需要时上方未出现过的字段）
 - [x] 方向键支持：上和左 绑定按钮 Prev, 下和右 绑定按钮 Next，就是点击后可以直接切换 file
-- [ ] 扫描文件，要求是一个一个添加到audio files下面的列表，防止由于扫描太慢而界面显示要等很久
+- [ ] 修改 title 并且保存后，重命名文件格式为 track_number title.mp3 (如果 track_number 存在，需要 track_number 为两位数，就是 类似于 1 需要补成 01，如果 track_number 不存在 直接 title.mp3)
+- [x] fix：audio files 下面的滚轮无法选中然后拖拽，会直接变成布局左右移动，而tag里面的就正常？
+
+## 待定
+
+- [ ] 扫描文件，要求是不断添加到audio files下面的列表，防止由于扫描太慢而界面显示要等很久

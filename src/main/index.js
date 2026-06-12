@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 
@@ -19,6 +20,7 @@ const AUDIO_EXTENSIONS = new Set([
   ".opus",
 ]);
 const MAX_AUDIO_SCAN_DEPTH = 5;
+const CONFIG_PATH = path.join(os.tmpdir(), "mutag_config.json");
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -70,6 +72,47 @@ async function walkAudioFiles(dir, depth = 1) {
   }
 
   return files;
+}
+
+async function readJsonFile(filePath, fallback) {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch (error) {
+    if (error?.code !== "ENOENT") console.warn(`Failed to read JSON file: ${filePath}`, error);
+    return fallback;
+  }
+}
+
+async function writeJsonFile(filePath, value) {
+  await fs.writeFile(filePath, JSON.stringify(value, null, 2), "utf8");
+}
+
+function projectStatePath(root) {
+  return path.join(root, "mutag.json");
+}
+
+async function scanFolder(root) {
+  const audioPaths = await walkAudioFiles(root);
+  const projectState = await readJsonFile(projectStatePath(root), null);
+  const files = [];
+
+  for (const filePath of audioPaths) {
+    try {
+      const persisted = projectState?.files?.[filePath];
+      files.push({
+        id: filePath,
+        name: path.basename(filePath),
+        path: filePath,
+        savedTags: readTags(filePath),
+        tempTags: persisted?.tempTags ?? null,
+        tempDeleted: Array.isArray(persisted?.tempDeleted) ? persisted.tempDeleted : [],
+      });
+    } catch (error) {
+      console.warn(`Skipping unreadable audio file: ${filePath}`, error);
+    }
+  }
+
+  return { root, files, projectState };
 }
 
 function firstString(value) {
@@ -232,28 +275,37 @@ ipcMain.handle("audio-tags:open-folder", async () => {
     properties: ["openDirectory"],
   });
 
-  if (result.canceled || result.filePaths.length === 0) return [];
+  if (result.canceled || result.filePaths.length === 0) return null;
 
   const root = result.filePaths[0];
-  const audioPaths = await walkAudioFiles(root);
-  const files = [];
+  return scanFolder(root);
+});
 
-  for (const filePath of audioPaths) {
-    try {
-      files.push({
-        id: filePath,
-        name: path.basename(filePath),
-        path: filePath,
-        savedTags: readTags(filePath),
-        tempTags: null,
-        tempDeleted: [],
-      });
-    } catch (error) {
-      console.warn(`Skipping unreadable audio file: ${filePath}`, error);
-    }
+ipcMain.handle("audio-tags:open-last-folder", async (_event, root) => {
+  if (!root || typeof root !== "string") return null;
+  try {
+    return await scanFolder(root);
+  } catch (error) {
+    console.warn(`Failed to reopen last folder: ${root}`, error);
+    return null;
   }
+});
 
-  return files;
+ipcMain.handle("audio-tags:load-config", async () => {
+  return readJsonFile(CONFIG_PATH, null);
+});
+
+ipcMain.handle("audio-tags:save-config", async (_event, config) => {
+  await writeJsonFile(CONFIG_PATH, config ?? {});
+  return { ok: true };
+});
+
+ipcMain.handle("audio-tags:save-project-state", async (_event, payload) => {
+  if (!payload || typeof payload.root !== "string") {
+    throw new Error("Missing project root.");
+  }
+  await writeJsonFile(projectStatePath(payload.root), payload.state ?? {});
+  return { ok: true };
 });
 
 ipcMain.handle("audio-tags:save-tags", async (_event, payload) => {

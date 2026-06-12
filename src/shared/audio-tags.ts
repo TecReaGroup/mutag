@@ -22,3 +22,35 @@ export interface SaveTagsResult {
   ok: true;
   tags: AudioTag;
 }
+
+export interface MutagConfig {
+  lastFolder: string;
+  openAI: {
+    baseURL: string;
+    apiKey: string;
+    model: string;
+  };
+  audioTag: {
+    defaultFieldKeys: string[];
+  };
+  layout: {
+    leftW: number;
+    rightW: number;
+  };
+}
+
+export interface MutagProjectState {
+  selectedId: string;
+  files: Record<string, {
+    tempTags: AudioTag | null;
+    tempDeleted: string[];
+  }>;
+  extraFields: { key: string; label: string }[];
+  chatMessages: { role: "user" | "assistant" | "system"; content: string }[];
+}
+
+export interface OpenFolderResult {
+  root: string;
+  files: AudioFile[];
+  projectState: Partial<MutagProjectState> | null;
+}
