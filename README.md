@@ -47,3 +47,7 @@ cd mutag
 npm install
 npm run dev
 ```
+
+## Friendly Links
+
+- [LINUX DO](https://linux.do/)
