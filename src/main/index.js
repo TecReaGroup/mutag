@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
-const { File, TagTypes, Id3v2FrameClassType } = require("node-taglib-sharp");
+const { File, TagTypes, Id3v2FrameClassType, ByteVector, Picture, PictureType } = require("node-taglib-sharp");
 
 app.name = "mutag";
 
@@ -105,12 +105,13 @@ async function scanFolder(root) {
   for (const filePath of audioPaths) {
     try {
       const persisted = projectState?.files?.[filePath];
+      const savedTags = readTags(filePath);
       files.push({
         id: filePath,
         name: path.basename(filePath),
         path: filePath,
-        savedTags: readTags(filePath),
-        tempTags: persisted?.tempTags ?? null,
+        savedTags,
+        tempTags: persisted?.tempTags ? { ...savedTags, ...persisted.tempTags } : null,
       });
     } catch (error) {
       console.warn(`Skipping unreadable audio file: ${filePath}`, error);
@@ -182,17 +183,79 @@ const TAG_KEY_ALIASES = {
   musicbrainztrackid: "musicbrainz_track_id",
 };
 
+const IMAGE_TAG_KEY = "image";
+
+const IMAGE_FILTERS = [
+  { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] },
+];
+
 // Fields that are always present in the returned tags, even when empty.
-const DEFAULT_TAG_KEYS = ["title", "artist", "album", "year", "genre", "bpm", "comment", "lyrics"];
+const DEFAULT_TAG_KEYS = [IMAGE_TAG_KEY, "title", "artist", "album", "year", "genre", "bpm", "comment", "lyrics"];
 
 const ALL_TAG_KEYS = [
+  IMAGE_TAG_KEY,
   ...Object.keys(ARRAY_TAG_PROPS),
   ...Object.keys(UINT_TAG_PROPS),
   ...Object.keys(STRING_TAG_PROPS),
 ];
 
+function normalizeMimeType(mimeType) {
+  const normalized = firstString(mimeType).trim().toLowerCase();
+  return normalized.startsWith("image/") ? normalized : "image/jpeg";
+}
+
+function pictureToDataUrl(picture) {
+  if (!picture?.data) return "";
+  const mimeType = normalizeMimeType(picture.mimeType);
+  const base64 = typeof picture.data.toBase64String === "function"
+    ? picture.data.toBase64String()
+    : Buffer.from(picture.data.toByteArray()).toString("base64");
+  return base64 ? `data:${mimeType};base64,${base64}` : "";
+}
+
+function parseImageDataUrl(value) {
+  const raw = normalizeTagValue(value).trim();
+  if (!raw) return null;
+  const match = raw.match(/^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i);
+  if (!match) throw new Error("Image must be a data URL.");
+  return {
+    mimeType: normalizeMimeType(match[1]),
+    buffer: Buffer.from(match[2], "base64"),
+  };
+}
+
+function readCoverImage(tag) {
+  const pictures = Array.isArray(tag.pictures) ? tag.pictures : [];
+  const frontCover = pictures.find((picture) => picture?.type === PictureType.FrontCover);
+  return pictureToDataUrl(frontCover ?? pictures[0]);
+}
+
+function setCoverImage(tag, value) {
+  const parsed = parseImageDataUrl(value);
+  if (!parsed) {
+    tag.pictures = [];
+    return;
+  }
+
+  const picture = Picture.fromFullData(
+    ByteVector.fromByteArray(parsed.buffer),
+    PictureType.FrontCover,
+    parsed.mimeType,
+    "Cover"
+  );
+  const existing = Array.isArray(tag.pictures) ? tag.pictures : [];
+  const withoutFrontCover = existing.filter((item, index) => item?.type !== PictureType.FrontCover && index !== 0);
+  tag.pictures = [picture, ...withoutFrontCover];
+}
+
+function dataUrlExtension(value) {
+  const mimeType = parseImageDataUrl(value)?.mimeType;
+  return Picture.getExtensionFromMimeType(mimeType) ?? ".jpg";
+}
+
 function readTagValue(tag, key) {
   key = TAG_KEY_ALIASES[key] ?? key;
+  if (key === IMAGE_TAG_KEY) return readCoverImage(tag);
   if (key in ARRAY_TAG_PROPS) return firstString(tag[ARRAY_TAG_PROPS[key]]);
   if (key in UINT_TAG_PROPS) {
     const value = tag[UINT_TAG_PROPS[key]];
@@ -357,14 +420,16 @@ function setStringArray(tag, key, value) {
 
 function clearTagValue(tag, key) {
   key = TAG_KEY_ALIASES[key] ?? key;
-  if (key in ARRAY_TAG_PROPS) setStringArray(tag, ARRAY_TAG_PROPS[key], "");
+  if (key === IMAGE_TAG_KEY) setCoverImage(tag, "");
+  else if (key in ARRAY_TAG_PROPS) setStringArray(tag, ARRAY_TAG_PROPS[key], "");
   else if (key in UINT_TAG_PROPS) tag[UINT_TAG_PROPS[key]] = 0;
   else if (key in STRING_TAG_PROPS) setString(tag, STRING_TAG_PROPS[key], "");
 }
 
 function writeTagValue(tag, key, value) {
   key = TAG_KEY_ALIASES[key] ?? key;
-  if (key in ARRAY_TAG_PROPS) setStringArray(tag, ARRAY_TAG_PROPS[key], value);
+  if (key === IMAGE_TAG_KEY) setCoverImage(tag, value);
+  else if (key in ARRAY_TAG_PROPS) setStringArray(tag, ARRAY_TAG_PROPS[key], value);
   else if (key in UINT_TAG_PROPS) tag[UINT_TAG_PROPS[key]] = parsePositiveInt(value);
   else if (key in STRING_TAG_PROPS) setString(tag, STRING_TAG_PROPS[key], value);
 }
@@ -513,6 +578,45 @@ ipcMain.handle("audio-tags:save-tags", async (_event, payload) => {
       throw new Error("Missing audio file path.");
     }
     return await writeTags(payload.path, payload.tags);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+ipcMain.handle("audio-tags:import-image", async () => {
+  try {
+    const result = await dialog.showOpenDialog({
+      properties: ["openFile"],
+      filters: IMAGE_FILTERS,
+    });
+    if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true };
+
+    const imagePath = result.filePaths[0];
+    const buffer = await fs.readFile(imagePath);
+    const mimeType = Picture.getMimeTypeFromFilename(imagePath);
+    if (!mimeType.startsWith("image/")) throw new Error("Selected file is not a supported image.");
+    return { ok: true, image: `data:${mimeType};base64,${buffer.toString("base64")}` };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+ipcMain.handle("audio-tags:export-image", async (_event, payload) => {
+  try {
+    if (!payload || typeof payload.path !== "string") throw new Error("Missing audio file path.");
+    const image = readTags(payload.path).image;
+    if (!image) throw new Error("This audio file has no cover image.");
+    const ext = dataUrlExtension(image);
+    const audioName = sanitizeFileNamePart(path.basename(payload.path, path.extname(payload.path))) || "cover";
+    const result = await dialog.showSaveDialog({
+      defaultPath: path.join(path.dirname(payload.path), `${audioName}-cover${ext}`),
+      filters: IMAGE_FILTERS,
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+
+    const parsed = parseImageDataUrl(image);
+    await fs.writeFile(result.filePath, parsed.buffer);
+    return { ok: true, path: result.filePath };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, FolderOpen, Settings, ArrowLeft, GripVertical, Undo2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, FolderOpen, Settings, ArrowLeft, GripVertical, Undo2, Upload, Download, Image as ImageIcon } from "lucide-react";
 import type { AudioFile, AudioTag, MutagConfig, MutagProjectState, OpenFolderResult } from "@/shared/audio-tags";
 
 const DEMO_FILES: AudioFile[] = [
@@ -8,40 +8,41 @@ const DEMO_FILES: AudioFile[] = [
     id: "1",
     name: "midnight_drive.mp3",
     path: "/music/midnight_drive.mp3",
-    savedTags: { title: "Midnight Drive", artist: "Neon Pulse", album: "Urban Echoes", year: "2023", genre: "Synthwave", bpm: "128", comment: "", lyrics: "[ti:Midnight Drive]\n[ar:Neon Pulse]\n[al:Urban Echoes]\n[00:00.00]\n[00:01.20] Neon lights streak across the rain\n[00:05.44] Engine hums a low refrain\n[00:09.88] The city fades in silver glow\n[00:14.12] Nowhere left but the road below\n[00:18.56] Headlights cut the boulevard\n[00:22.80] Every mile a little harder\n[00:27.04] Radio just static now\n[00:31.28] Can't remember when or how\n[00:35.52] I started driving through the night\n[00:39.76] Chasing something out of sight\n[00:44.00] The skyline shrinks in the rearview glass\n[00:48.24] Another version of me in the past\n[00:52.48] Midnight drive, midnight drive\n[00:56.72] Keeping ghosts and dreams alive\n[01:00.96] Midnight drive, midnight drive\n[01:05.20] On a road where stars arrive" },
+    savedTags: { image: "", title: "Midnight Drive", artist: "Neon Pulse", album: "Urban Echoes", year: "2023", genre: "Synthwave", bpm: "128", comment: "", lyrics: "[ti:Midnight Drive]\n[ar:Neon Pulse]\n[al:Urban Echoes]\n[00:00.00]\n[00:01.20] Neon lights streak across the rain\n[00:05.44] Engine hums a low refrain\n[00:09.88] The city fades in silver glow\n[00:14.12] Nowhere left but the road below\n[00:18.56] Headlights cut the boulevard\n[00:22.80] Every mile a little harder\n[00:27.04] Radio just static now\n[00:31.28] Can't remember when or how\n[00:35.52] I started driving through the night\n[00:39.76] Chasing something out of sight\n[00:44.00] The skyline shrinks in the rearview glass\n[00:48.24] Another version of me in the past\n[00:52.48] Midnight drive, midnight drive\n[00:56.72] Keeping ghosts and dreams alive\n[01:00.96] Midnight drive, midnight drive\n[01:05.20] On a road where stars arrive" },
     tempTags: null,
   },
   {
     id: "2",
     name: "summer_haze.flac",
     path: "/music/summer_haze.flac",
-    savedTags: { title: "Summer Haze", artist: "Coastline", album: "Golden Hours", year: "2021", genre: "Indie Pop", bpm: "95", comment: "Live recording", lyrics: "[ti:Summer Haze]\n[ar:Coastline]\n[al:Golden Hours]\n[00:00.00]\n[00:02.30] Warm sand between my toes\n[00:05.90] Where the summer river flows\n[00:09.50] Golden light on everything\n[00:13.10] Hear the distant church bells ring\n[00:16.70] Ice melts in a paper cup\n[00:20.30] We never talk about growing up\n[00:23.90] Screen door swings in the afternoon\n[00:27.50] Sunburned kids and a half-full moon\n[00:31.10] Stay a little longer here\n[00:34.70] Before the end of the year\n[00:38.30] Summer haze over everything\n[00:41.90] Forgetting what the winters bring\n[00:45.50] Summer haze, summer haze\n[00:49.10] Lost inside these golden days\n[00:52.70] Summer haze, summer haze\n[00:56.30] Nothing ever really fades" },
-    tempTags: { title: "Summer Haze", artist: "Coastline feat. Luna", album: "Golden Hours (Deluxe)", year: "2022", genre: "Indie Pop", bpm: "95", comment: "", lyrics: "[ti:Summer Haze]\n[ar:Coastline]\n[al:Golden Hours]\n[00:00.00]\n[00:02.30] Warm sand between my toes\n[00:05.90] Where the summer river flows\n[00:09.50] Golden light on everything\n[00:13.10] Hear the distant church bells ring\n[00:16.70] Ice melts in a paper cup\n[00:20.30] We never talk about growing up\n[00:23.90] Screen door swings in the afternoon\n[00:27.50] Sunburned kids and a half-full moon\n[00:31.10] Stay a little longer here\n[00:34.70] Before the end of the year\n[00:38.30] Summer haze over everything\n[00:41.90] Forgetting what the winters bring\n[00:45.50] Summer haze, summer haze\n[00:49.10] Lost inside these golden days\n[00:52.70] Summer haze, summer haze\n[00:56.30] Nothing ever really fades" },
+    savedTags: { image: "", title: "Summer Haze", artist: "Coastline", album: "Golden Hours", year: "2021", genre: "Indie Pop", bpm: "95", comment: "Live recording", lyrics: "[ti:Summer Haze]\n[ar:Coastline]\n[al:Golden Hours]\n[00:00.00]\n[00:02.30] Warm sand between my toes\n[00:05.90] Where the summer river flows\n[00:09.50] Golden light on everything\n[00:13.10] Hear the distant church bells ring\n[00:16.70] Ice melts in a paper cup\n[00:20.30] We never talk about growing up\n[00:23.90] Screen door swings in the afternoon\n[00:27.50] Sunburned kids and a half-full moon\n[00:31.10] Stay a little longer here\n[00:34.70] Before the end of the year\n[00:38.30] Summer haze over everything\n[00:41.90] Forgetting what the winters bring\n[00:45.50] Summer haze, summer haze\n[00:49.10] Lost inside these golden days\n[00:52.70] Summer haze, summer haze\n[00:56.30] Nothing ever really fades" },
+    tempTags: { image: "", title: "Summer Haze", artist: "Coastline feat. Luna", album: "Golden Hours (Deluxe)", year: "2022", genre: "Indie Pop", bpm: "95", comment: "", lyrics: "[ti:Summer Haze]\n[ar:Coastline]\n[al:Golden Hours]\n[00:00.00]\n[00:02.30] Warm sand between my toes\n[00:05.90] Where the summer river flows\n[00:09.50] Golden light on everything\n[00:13.10] Hear the distant church bells ring\n[00:16.70] Ice melts in a paper cup\n[00:20.30] We never talk about growing up\n[00:23.90] Screen door swings in the afternoon\n[00:27.50] Sunburned kids and a half-full moon\n[00:31.10] Stay a little longer here\n[00:34.70] Before the end of the year\n[00:38.30] Summer haze over everything\n[00:41.90] Forgetting what the winters bring\n[00:45.50] Summer haze, summer haze\n[00:49.10] Lost inside these golden days\n[00:52.70] Summer haze, summer haze\n[00:56.30] Nothing ever really fades" },
   },
   {
     id: "3",
     name: "rain_static.wav",
     path: "/music/rain_static.wav",
-    savedTags: { title: "Rain Static", artist: "Grey Matter", album: "Ambient Vol.2", year: "2022", genre: "Ambient", bpm: "60", comment: "Extended version", lyrics: "[ti:Rain Static]\n[ar:Grey Matter]\n[al:Ambient Vol.2]\n[00:00.00]\n[00:04.80] Static hiss and falling rain\n[00:12.60] Dissolving into the window pane\n[00:20.40] Nothing moves, nothing calls\n[00:28.20] Just the quiet between the walls\n[00:36.00] A breath held for too long\n[00:43.80] The absence of a song\n[00:51.60] Frequencies we cannot name\n[00:59.40] Everything and more the same\n[01:07.20] Grey on grey on grey on grey\n[01:15.00] Watching time erode away\n[01:22.80] Rain static, rain static\n[01:30.60] Filling all the attic\n[01:38.40] Rain static, rain static\n[01:46.20] Softly automatic" },
+    savedTags: { image: "", title: "Rain Static", artist: "Grey Matter", album: "Ambient Vol.2", year: "2022", genre: "Ambient", bpm: "60", comment: "Extended version", lyrics: "[ti:Rain Static]\n[ar:Grey Matter]\n[al:Ambient Vol.2]\n[00:00.00]\n[00:04.80] Static hiss and falling rain\n[00:12.60] Dissolving into the window pane\n[00:20.40] Nothing moves, nothing calls\n[00:28.20] Just the quiet between the walls\n[00:36.00] A breath held for too long\n[00:43.80] The absence of a song\n[00:51.60] Frequencies we cannot name\n[00:59.40] Everything and more the same\n[01:07.20] Grey on grey on grey on grey\n[01:15.00] Watching time erode away\n[01:22.80] Rain static, rain static\n[01:30.60] Filling all the attic\n[01:38.40] Rain static, rain static\n[01:46.20] Softly automatic" },
     tempTags: null,
   },
   {
     id: "4",
     name: "crystal_caves.mp3",
     path: "/music/crystal_caves.mp3",
-    savedTags: { title: "Crystal Caves", artist: "Echo Chamber", album: "", year: "2024", genre: "Electronic", bpm: "140", comment: "", lyrics: "[ti:Crystal Caves]\n[ar:Echo Chamber]\n[00:00.00]\n[00:01.80] Deep below the mountain stone\n[00:04.50] Crystal walls and undertone\n[00:07.20] Echoes bounce from wall to wall\n[00:09.90] Answer to the cavern's call\n[00:12.60] Stalactites drip in time\n[00:15.30] Every drop a perfect rhyme\n[00:18.00] Bioluminescent glow\n[00:20.70] Lighting paths we'll never know\n[00:23.40] Deeper, deeper, further in\n[00:26.10] Where the hollow worlds begin\n[00:28.80] Crystal caves, crystal caves\n[00:31.50] Resonating in the haze\n[00:34.20] Crystal caves, crystal caves\n[00:36.90] Underground and all ablaze" },
+    savedTags: { image: "", title: "Crystal Caves", artist: "Echo Chamber", album: "", year: "2024", genre: "Electronic", bpm: "140", comment: "", lyrics: "[ti:Crystal Caves]\n[ar:Echo Chamber]\n[00:00.00]\n[00:01.80] Deep below the mountain stone\n[00:04.50] Crystal walls and undertone\n[00:07.20] Echoes bounce from wall to wall\n[00:09.90] Answer to the cavern's call\n[00:12.60] Stalactites drip in time\n[00:15.30] Every drop a perfect rhyme\n[00:18.00] Bioluminescent glow\n[00:20.70] Lighting paths we'll never know\n[00:23.40] Deeper, deeper, further in\n[00:26.10] Where the hollow worlds begin\n[00:28.80] Crystal caves, crystal caves\n[00:31.50] Resonating in the haze\n[00:34.20] Crystal caves, crystal caves\n[00:36.90] Underground and all ablaze" },
     tempTags: null,
   },
   {
     id: "5",
     name: "lost_signal.aiff",
     path: "/music/lost_signal.aiff",
-    savedTags: { title: "Lost Signal", artist: "Void Walker", album: "Deep Space Sessions", year: "2020", genre: "Techno", bpm: "150", comment: "", lyrics: "[ti:Lost Signal]\n[ar:Void Walker]\n[al:Deep Space Sessions]\n[00:00.00]\n[00:02.00] Signal lost at light-year four\n[00:05.20] Can't find what I'm searching for\n[00:08.40] Static fills the empty space\n[00:11.60] Drifting through this dark expanse\n[00:14.80] Transmission on repeat\n[00:18.00] No one left to hear the beat\n[00:21.20] Coordinates unknown\n[00:24.40] Traveling the void alone\n[00:27.60] Last broadcast at 03:00\n[00:30.80] Nobody received it though\n[00:34.00] Lost signal, lost signal\n[00:37.20] Fading out to minimal\n[00:40.40] Lost signal, lost signal\n[00:43.60] Beyond the dark subliminal" },
+    savedTags: { image: "", title: "Lost Signal", artist: "Void Walker", album: "Deep Space Sessions", year: "2020", genre: "Techno", bpm: "150", comment: "", lyrics: "[ti:Lost Signal]\n[ar:Void Walker]\n[al:Deep Space Sessions]\n[00:00.00]\n[00:02.00] Signal lost at light-year four\n[00:05.20] Can't find what I'm searching for\n[00:08.40] Static fills the empty space\n[00:11.60] Drifting through this dark expanse\n[00:14.80] Transmission on repeat\n[00:18.00] No one left to hear the beat\n[00:21.20] Coordinates unknown\n[00:24.40] Traveling the void alone\n[00:27.60] Last broadcast at 03:00\n[00:30.80] Nobody received it though\n[00:34.00] Lost signal, lost signal\n[00:37.20] Fading out to minimal\n[00:40.40] Lost signal, lost signal\n[00:43.60] Beyond the dark subliminal" },
     tempTags: null,
   },
 ];
 
 const TAG_FIELDS: { key: string; label: string }[] = [
+  { key: "image", label: "Album cover" },
   { key: "title", label: "Title" },
   { key: "artist", label: "Artist" },
   { key: "album", label: "Album" },
@@ -53,6 +54,7 @@ const TAG_FIELDS: { key: string; label: string }[] = [
 ];
 
 const TAG_LABELS: Record<string, string> = {
+  image: "Album cover",
   title: "Title",
   artist: "Artist",
   album: "Album",
@@ -115,6 +117,14 @@ function getTagValue(tags: AudioTag | null | undefined, key: string) {
   if (!tags) return "";
   const normalized = normalizeTagKey(key);
   return tags[normalized] ?? tags[key] ?? "";
+}
+
+function compactTagsForChat(tags: AudioTag) {
+  const compact: Record<string, string> = {};
+  for (const [key, value] of Object.entries(tags)) {
+    compact[key] = key === "image" && value ? "[cover image]" : value;
+  }
+  return compact as AudioTag;
 }
 
 function formatSaveError(err: unknown) {
@@ -198,6 +208,22 @@ function FieldSkeletonRows() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function CoverPreview({ image }: { image: string; muted?: boolean }) {
+  return (
+    <div className="flex items-center gap-3 min-h-[92px]">
+      <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded border border-[#d0d7de] bg-white">
+        {image ? (
+          <img src={image} alt="Album cover" className="h-full w-full object-cover" />
+        ) : (
+          <div className="h-full w-full flex items-center justify-center text-[#8c959f] bg-[#f6f8fa]">
+            <ImageIcon size={24} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -473,7 +499,10 @@ export function AudioTagEditor() {
             concurrency: clampPositiveInteger(config.openAI.concurrency, prev.concurrency),
           }));
         }
-        if (Array.isArray(config?.audioTag?.defaultFieldKeys)) setDefaultFieldKeys(config.audioTag.defaultFieldKeys);
+        if (Array.isArray(config?.audioTag?.defaultFieldKeys)) {
+          const restored = config.audioTag.defaultFieldKeys.map(normalizeTagKey).filter((key) => key !== "image");
+          setDefaultFieldKeys(["image", ...restored]);
+        }
         if (typeof config?.layout?.leftW === "number") setLeftW(config.layout.leftW);
         if (typeof config?.layout?.rightW === "number") setRightW(config.layout.rightW);
 
@@ -525,6 +554,32 @@ export function AudioTagEditor() {
     },
     [updateTempField]
   );
+
+  const importImage = useCallback(async () => {
+    if (isAcceptingAll || !hasSelectedFile) return;
+    setSaveError(null);
+    try {
+      const result = await window.audioTagApi?.importImage();
+      if (!result || !result.ok) {
+        if (result && !result.canceled && result.error) setSaveError(result.error);
+        return;
+      }
+      updateTempField("image", result.image);
+    } catch (err) {
+      setSaveError(formatSaveError(err));
+    }
+  }, [hasSelectedFile, isAcceptingAll, updateTempField]);
+
+  const exportImage = useCallback(async () => {
+    if (isAcceptingAll || !hasSelectedFile) return;
+    setSaveError(null);
+    try {
+      const result = await window.audioTagApi?.exportImage(selectedFile.path);
+      if (result && !result.ok && !result.canceled && result.error) setSaveError(result.error);
+    } catch (err) {
+      setSaveError(formatSaveError(err));
+    }
+  }, [hasSelectedFile, isAcceptingAll, selectedFile.path]);
 
   const saveFile = useCallback(async () => {
     if (isAcceptingAll) return;
@@ -644,7 +699,7 @@ export function AudioTagEditor() {
 
     const userMsg = { role: "user" as const, content: text };
     const fileDict: Record<string, AudioTag> = {};
-    for (const f of files) fileDict[f.id] = f.savedTags;
+    for (const f of files) fileDict[f.id] = compactTagsForChat(f.savedTags);
     const systemMsg = {
       role: "system" as const,
       content:
@@ -673,7 +728,7 @@ export function AudioTagEditor() {
       const url = `${openAI.baseURL.replace(/\/$/, "")}/chat/completions`;
       const results = await runSettledWithConcurrency(batches, concurrency, async (batch, batchIndex) => {
         const batchDict: Record<string, AudioTag> = {};
-        for (const f of batch) batchDict[f.id] = f.savedTags;
+        for (const f of batch) batchDict[f.id] = compactTagsForChat(f.savedTags);
         const batchContextMsg = {
           ...contextMsg,
           content: "Files:\n" + JSON.stringify(batchDict, null, 2),
@@ -1236,6 +1291,7 @@ export function AudioTagEditor() {
               const editVal = getTagValue(effectiveTags, key);
               const status = getFieldStatus(origVal, editVal);
               const badge = STATUS_BADGE[status];
+              const isImageField = key === "image";
 
               return (
                 /* Each row is a horizontal flex — both columns in the same div, so they share the same height */
@@ -1243,14 +1299,30 @@ export function AudioTagEditor() {
 
                   {/* Original column */}
                   <div className="flex-1 flex flex-col">
-                    <div className="text-[10px] text-[#8c959f] mb-1 uppercase tracking-wider">
-                      {label}
-                      {defaultFieldKeys.includes(key) && (
-                        <span className="text-[#cf222e] ml-1">*</span>
+                    <div className="text-[10px] text-[#8c959f] mb-1 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>
+                        {label}
+                        {defaultFieldKeys.includes(key) && (
+                          <span className="text-[#cf222e] ml-1">*</span>
+                        )}
+                      </span>
+                      {isImageField && (
+                        <button
+                          onClick={exportImage}
+                          disabled={isAcceptingAll || !origVal}
+                          title="Export image"
+                          className="ml-auto h-5 w-5 flex items-center justify-center rounded text-[#656d76] hover:text-[#0969da] hover:bg-[#ddf4ff] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <Download size={12} />
+                        </button>
                       )}
                     </div>
                     <div className="flex-1 px-3 py-2 rounded border border-[#d0d7de] bg-[#f6f8fa] text-sm text-[#656d76] min-h-[36px] whitespace-pre-wrap break-words">
-                      {origVal || <span className="text-[#afb8c1] italic">empty</span>}
+                      {isImageField ? (
+                        <CoverPreview image={origVal} muted />
+                      ) : (
+                        origVal || <span className="text-[#afb8c1] italic">empty</span>
+                      )}
                     </div>
                   </div>
 
@@ -1266,38 +1338,78 @@ export function AudioTagEditor() {
                       {status !== "unchanged" && (
                         <span className={`font-bold ${badge.color}`}>[{badge.label}]</span>
                       )}
+                      {isImageField && (
+                        <button
+                          onClick={importImage}
+                          disabled={isAcceptingAll}
+                          title="Import image"
+                          className="ml-auto h-5 w-5 flex items-center justify-center rounded text-[#656d76] hover:text-[#0969da] hover:bg-[#ddf4ff] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <Upload size={12} />
+                        </button>
+                      )}
                     </div>
                     <div className={`flex-1 flex items-start rounded border transition-colors ${STATUS_INPUT_STYLE[status]}`}>
-                      <AutoTextarea
-                        value={editVal}
-                        onChange={(v) => updateTempField(key, v)}
-                        onFocus={() => setFocusedField(key)}
-                        onBlur={() => setTimeout(() => setFocusedField((f) => f === key ? null : f), 150)}
-                        placeholder="empty"
-                        className="flex-1 min-h-[36px] w-full"
-                        disabled={isAcceptingAll}
-                      />
-                      {!isAcceptingAll && focusedField === key && (
-                        <div className="self-stretch flex items-center flex-shrink-0">
-                          {status !== "unchanged" && (
-                            <button
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => updateTempField(key, origVal)}
-                              title="Revert field"
-                              className="h-full w-8 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
-                            >
-                              <Undo2 size={14} />
-                            </button>
+                      {isImageField ? (
+                        <>
+                          <div className="flex-1 px-3 py-2">
+                            <CoverPreview image={editVal} />
+                          </div>
+                          {!isAcceptingAll && (
+                            <div className="self-stretch flex items-center flex-shrink-0">
+                              {status !== "unchanged" && (
+                                <button
+                                  onClick={() => updateTempField(key, origVal)}
+                                  title="Revert field"
+                                  className="h-full w-8 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+                                >
+                                  <Undo2 size={14} />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => deleteField(key)}
+                                title="Clear image"
+                                className="h-full px-2 opacity-50 hover:opacity-100 hover:text-[#cf222e] transition-opacity"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           )}
-                          <button
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => deleteField(key)}
-                            title="Clear field"
-                            className="h-full px-2 opacity-50 hover:opacity-100 hover:text-[#cf222e] transition-opacity"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+                        </>
+                      ) : (
+                        <>
+                          <AutoTextarea
+                            value={editVal}
+                            onChange={(v) => updateTempField(key, v)}
+                            onFocus={() => setFocusedField(key)}
+                            onBlur={() => setTimeout(() => setFocusedField((f) => f === key ? null : f), 150)}
+                            placeholder="empty"
+                            className="flex-1 min-h-[36px] w-full"
+                            disabled={isAcceptingAll}
+                          />
+                          {!isAcceptingAll && focusedField === key && (
+                            <div className="self-stretch flex items-center flex-shrink-0">
+                              {status !== "unchanged" && (
+                                <button
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => updateTempField(key, origVal)}
+                                  title="Revert field"
+                                  className="h-full w-8 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+                                >
+                                  <Undo2 size={14} />
+                                </button>
+                              )}
+                              <button
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => deleteField(key)}
+                                title="Clear field"
+                                className="h-full px-2 opacity-50 hover:opacity-100 hover:text-[#cf222e] transition-opacity"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

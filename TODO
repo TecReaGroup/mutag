@@ -23,6 +23,8 @@
 - [x] 当sending 的时候 clear 按钮换成 stop 按钮，就是停止请求
 - [x] accept all 的时候一个个 save 避免卡顿
 - [x] 编写 github action 自动化编译发布 release
+- [ ] 专辑封面导出和导入，注意兼容层
+- [ ] 专辑封面自动生成
 
 ## 待定
 

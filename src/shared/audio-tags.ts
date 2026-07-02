@@ -1,4 +1,5 @@
 export interface AudioTag {
+  image: string;
   title: string;
   artist: string;
   album: string;

@@ -9,4 +9,6 @@ contextBridge.exposeInMainWorld("audioTagApi", {
     ipcRenderer.invoke("audio-tags:save-project-state", { root, state }),
   saveTags: (path, tags) =>
     ipcRenderer.invoke("audio-tags:save-tags", { path, tags }),
+  importImage: () => ipcRenderer.invoke("audio-tags:import-image"),
+  exportImage: (path) => ipcRenderer.invoke("audio-tags:export-image", { path }),
 });
