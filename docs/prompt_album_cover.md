@@ -1,1 +1,1 @@
-生成一张正方形 ablum cover ：布局为渐变，前面艺术字签名 約書亞樂團 <换行> Youtube，注意美观布局合理，风格小清新一点，避免 ai 味
+生成一张正方形 ablum cover ：布局为渐变，前面艺术字签名： 万国祷告殿 ANHOP <换行> Youtube，具体风格：Close-up photograph of expressive handwritten calligraphy on textured paper. Chinese characters in dynamic semi-cursive, and English words in elegant cursive with natural stroke shading. Soft pastel gradient background transitioning. Minimalist, artistic vibe.
