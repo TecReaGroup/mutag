@@ -9,7 +9,7 @@ async function executeOrganise(context: ChatCommandContext): Promise<ChatCommand
     files: Object.fromEntries(context.files.map((file) => [file.id, { tempTags: file.tempTags }])),
     chatMessages: context.chatMessages,
   });
-  const organisation = await api.organise(context.projectRoot, context.openAI);
+  const organisation = await api.organise(context.projectRoot);
   const movesByPath = new Map(organisation.moves.map((move) => [move.originalPath, move]));
   return {
     files: context.files.map((file) => {
@@ -23,7 +23,7 @@ async function executeOrganise(context: ChatCommandContext): Promise<ChatCommand
 
 export const organiseCommand: ChatCommand = {
   name: "/organise",
-  description: "按歌手整理文件，并补充缺失的 artist.jpg 和 cover.jpg；发送后执行",
-  progressMessage: "正在整理文件并补充缺失图片…",
+  description: "按歌手和歌名重新组织音频文件；发送后执行",
+  progressMessage: "正在重新组织音频文件…",
   execute: executeOrganise,
 };

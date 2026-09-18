@@ -32,10 +32,10 @@ async function exists(filePath) {
   }
 }
 
-/** Persist organisation events in the project's daily UTC+8 log. */
-async function logOrganisation(level, message) {
+/** Persist library operations in the project's daily UTC+8 log. */
+async function logLibraryEvent(level, message) {
   const timestamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
-  const line = `[${timestamp.slice(0, 10)} ${timestamp.slice(11, 19)} +08:00] [${level}] [organise] - ${message.replace(/[\r\n]+/g, " ")}\n`;
+  const line = `[${timestamp.slice(0, 10)} ${timestamp.slice(11, 19)} +08:00] [${level}] [music-library] - ${message.replace(/[\r\n]+/g, " ")}\n`;
   try {
     await fs.mkdir(LOG_DIRECTORY, { recursive: true });
     await fs.appendFile(path.join(LOG_DIRECTORY, `log_${timestamp.slice(0, 10)}.log`), line);
@@ -103,16 +103,14 @@ async function downloadArtwork(url, destination) {
   await output.close();
 }
 
-/** Organise scanned audio files and fill missing artwork, retaining partial successes. */
-export async function organiseLibrary(root, files, openAI, projectState) {
+/** Organise scanned audio files and reconcile persisted paths. */
+export async function organiseLibrary(root, files, projectState) {
   const realRoot = await fs.realpath(root);
   const moves = [];
   const messages = [];
-  const artists = new Map();
   let unchanged = 0;
   let skipped = 0;
-  let downloaded = 0;
-  await logOrganisation("INFO", `开始整理 ${root}，共 ${files.length} 个音频文件`);
+  await logLibraryEvent("INFO", `开始整理 ${root}，共 ${files.length} 个音频文件`);
 
   for (const audioFile of files) {
     try {
@@ -136,17 +134,15 @@ export async function organiseLibrary(root, files, openAI, projectState) {
           throw error;
         }
         moves.push({ originalPath: audioFile.path, path: destination, name: path.basename(destination) });
-        await logOrganisation("INFO", `移动 ${audioFile.path} -> ${destination}`);
+        await logLibraryEvent("INFO", `移动 ${audioFile.path} -> ${destination}`);
       } else {
         unchanged += 1;
       }
-      if (!artists.has(directory)) artists.set(directory, { artist: audioFile.savedTags.artist, songs: [] });
-      artists.get(directory).songs.push({ title: audioFile.savedTags.title, album: audioFile.savedTags.album });
     } catch (error) {
       skipped += 1;
       const reason = error.code === "EEXIST" ? "目标文件已存在" : error.message;
       messages.push(`跳过 ${audioFile.name}：${reason}`);
-      await logOrganisation("WARN", messages[messages.length - 1]);
+      await logLibraryEvent("WARN", messages[messages.length - 1]);
     }
   }
 
@@ -166,8 +162,39 @@ export async function organiseLibrary(root, files, openAI, projectState) {
     }
   }
 
+  const summary = `整理完成：移动 ${moves.length} 个文件，${unchanged} 个已在正确位置，跳过 ${skipped} 个。`;
+  for (const message of messages) await logLibraryEvent("INFO", message);
+  await logLibraryEvent("INFO", summary);
+  return { moves, messages: [summary, ...messages] };
+}
+
+/** Fill missing artwork in existing artist directories without moving audio files. */
+export async function downloadLibraryImages(root, files, openAI) {
+  const realRoot = await fs.realpath(root);
+  const artists = new Map();
+  const messages = [];
+  let downloaded = 0;
+  await logLibraryEvent("INFO", `开始补充图片 ${root}`);
+  for (const audioFile of files) {
+    try {
+      const directory = path.join(root, filenameFromTag(audioFile.savedTags.artist));
+      if (path.dirname(path.resolve(audioFile.path)) !== directory) {
+        messages.push(`跳过 ${audioFile.name} 的图片查询：文件尚未归入歌手目录，请先执行 /organise。`);
+        continue;
+      }
+      if (!artists.has(directory)) artists.set(directory, { artist: audioFile.savedTags.artist, songs: [] });
+      artists.get(directory).songs.push({ title: audioFile.savedTags.title, album: audioFile.savedTags.album });
+    } catch (error) {
+      messages.push(`跳过 ${audioFile.name} 的图片查询：${error.message}`);
+    }
+  }
+
   for (const [directory, { artist, songs }] of artists) {
     try {
+      const relativeDirectory = path.relative(realRoot, await fs.realpath(directory));
+      if (relativeDirectory.startsWith(`..${path.sep}`) || relativeDirectory === ".." || path.isAbsolute(relativeDirectory)) {
+        throw new Error("歌手目录指向当前音乐目录之外");
+      }
       const missing = [];
       for (const filename of IMAGE_NAMES) {
         if (await exists(path.join(directory, filename))) messages.push(`${artist}/${filename} 已存在，保留。`);
@@ -204,8 +231,8 @@ export async function organiseLibrary(root, files, openAI, projectState) {
       messages.push(`${artist}：图片处理失败，${error.message}`);
     }
   }
-  const summary = `整理完成：移动 ${moves.length} 个文件，${unchanged} 个已在正确位置，跳过 ${skipped} 个；下载 ${downloaded} 张图片。`;
-  for (const message of messages) await logOrganisation("INFO", message);
-  await logOrganisation("INFO", summary);
-  return { moves, messages: [summary, ...messages] };
+  const summary = `图片处理完成：检查 ${artists.size} 个歌手目录，下载 ${downloaded} 张图片。`;
+  for (const message of messages) await logLibraryEvent("INFO", message);
+  await logLibraryEvent("INFO", summary);
+  return { messages: [summary, ...messages] };
 }

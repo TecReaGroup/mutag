@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { organiseLibrary } from "./organise-library.js";
+import { organiseLibrary, downloadLibraryImages } from "./music-library.js";
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
@@ -550,7 +550,17 @@ ipcMain.handle("audio-tags:organise", async (_event, payload) => {
   const root = path.resolve(payload.root);
   if (!(await fs.stat(root)).isDirectory()) throw new Error("音乐目录不存在");
   const folder = await scanFolder(root);
-  return organiseLibrary(root, folder.files, payload.openAI, folder.projectState);
+  return organiseLibrary(root, folder.files, folder.projectState);
+});
+
+ipcMain.handle("audio-tags:download-images", async (_event, payload) => {
+  if (!payload || typeof payload.root !== "string" || !payload.root.trim()) {
+    throw new Error("请先打开需要补充图片的音乐目录");
+  }
+  const root = path.resolve(payload.root);
+  if (!(await fs.stat(root)).isDirectory()) throw new Error("音乐目录不存在");
+  const folder = await scanFolder(root);
+  return downloadLibraryImages(root, folder.files, payload.openAI);
 });
 
 ipcMain.handle("audio-tags:save-config", async (_event, config) => {

@@ -5,7 +5,8 @@ declare global {
     audioTagApi?: {
       openFolder: () => Promise<OpenFolderResult | null>;
       openLastFolder: (root: string) => Promise<OpenFolderResult | null>;
-      organise: (root: string, openAI: MutagConfig["openAI"]) => Promise<OrganiseLibraryResult>;
+      organise: (root: string) => Promise<OrganiseLibraryResult>;
+      downloadImages: (root: string, openAI: MutagConfig["openAI"]) => Promise<{ messages: string[] }>;
       loadConfig: () => Promise<Partial<MutagConfig> | null>;
       saveConfig: (config: MutagConfig) => Promise<{ ok: true }>;
       saveProjectState: (root: string, state: MutagProjectState) => Promise<{ ok: true }>;

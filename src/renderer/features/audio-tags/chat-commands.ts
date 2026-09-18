@@ -1,5 +1,7 @@
 import type { AudioFile, MutagConfig, MutagProjectState } from "@/shared/audio-tags";
 import { organiseCommand } from "./organise-command";
+import { imageCommand } from "./image-command";
+import { metaCommand } from "./meta-command";
 
 export interface ChatCommandContext {
   projectRoot: string;
@@ -22,7 +24,7 @@ export interface ChatCommand {
   execute: (context: ChatCommandContext) => Promise<ChatCommandOutcome>;
 }
 
-export const CHAT_COMMANDS: readonly ChatCommand[] = [organiseCommand];
+export const CHAT_COMMANDS: readonly ChatCommand[] = [metaCommand, organiseCommand, imageCommand];
 
 /** Resolve slash commands locally; reject unknown names and unsupported arguments. */
 export function resolveChatCommand(text: string): ChatCommand | null {

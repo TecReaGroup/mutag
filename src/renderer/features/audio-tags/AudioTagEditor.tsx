@@ -294,42 +294,11 @@ function clampPositiveInteger(value: number, fallback: number) {
   return Math.max(1, Math.floor(value));
 }
 
-function chunkFiles<T>(items: T[], size: number) {
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
-  return chunks;
-}
-
 function fuzzyIncludes(value: string, query: string) {
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (terms.length === 0) return true;
   const haystack = value.toLowerCase();
   return terms.every((term) => haystack.includes(term));
-}
-
-type SettledBatchResult<R> =
-  | { ok: true; value: R }
-  | { ok: false; error: unknown };
-
-async function runSettledWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>, signal?: AbortSignal) {
-  const results: SettledBatchResult<R>[] = new Array(items.length);
-  let nextIndex = 0;
-  const workerCount = Math.min(concurrency, items.length);
-
-  await Promise.all(Array.from({ length: workerCount }, async () => {
-    while (nextIndex < items.length) {
-      if (signal?.aborted) break;
-      const index = nextIndex;
-      nextIndex += 1;
-      try {
-        results[index] = { ok: true, value: await worker(items[index], index) };
-      } catch (error) {
-        results[index] = { ok: false, error };
-      }
-    }
-  }));
-
-  return results;
 }
 
 type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
@@ -677,29 +646,9 @@ export function AudioTagEditor() {
     }
   }, [files, isFileOperationBusy]);
 
-  const applyChatChanges = useCallback((updates: Record<string, Record<string, string | null>>) => {
-    setFiles((prev) =>
-      prev.map((f) => {
-        const u = updates[f.id];
-        if (!u) return f;
-        const nextTags: AudioTag = { ...f.savedTags };
-        for (const [rawKey, v] of Object.entries(u)) {
-          const k = normalizeTagKey(rawKey);
-          if (v === null) {
-            nextTags[k] = "";
-          } else {
-            nextTags[k] = String(v);
-          }
-        }
-        return { ...f, tempTags: nextTags };
-      })
-    );
-  }, []);
-
   const sendChat = useCallback(async () => {
     const text = chatInput.trim();
-    if (!text || chatSending || isFileOperationBusy || isScanning || files.some((file) => file.tempTags &&
-      Object.keys({ ...file.savedTags, ...file.tempTags }).some((key) => getTagValue(file.tempTags, key) !== getTagValue(file.savedTags, key)))) return;
+    if (!text || chatSending || isFileOperationBusy || isScanning) return;
     setChatError(null);
 
     const userMsg = { role: "user" as const, content: text };
@@ -713,6 +662,11 @@ export function AudioTagEditor() {
       return;
     }
     if (command) {
+      if (files.some((file) => file.tempTags && Object.keys({ ...file.savedTags, ...file.tempTags }).some(
+        (key) => getTagValue(file.tempTags, key) !== getTagValue(file.savedTags, key)))) {
+        setChatError("请先保存或丢弃待处理修改，再执行命令。");
+        return;
+      }
       setChatMessages((prev) => [...prev, userMsg]);
       setChatInput("");
       setActiveCommand(command);
@@ -744,12 +698,10 @@ export function AudioTagEditor() {
     const systemMsg = {
       role: "system" as const,
       content:
-        "You are an audio tag editor. The user gives you a dictionary of audio files keyed by a stable `id`, where each value is the file's current tags JSON. " +
-        "Reply with ONLY a JSON object — no prose, no markdown fences. " +
-        "Shape: { \"<id>\": { fieldKey: newValue, ... }, ... }. " +
-        "Keys MUST be ids from the input dictionary. " +
-        "Include ONLY fields you changed. Use null to delete a field. " +
-        "Omit any file that needs no changes.",
+        "You are a helpful music assistant. Reply conversationally in the user's language. " +
+        "The supplied audio tags are context only. This conversation cannot modify files or metadata. " +
+        "For metadata completion suggest /meta, for file organisation /organise, and for artwork downloads /image. " +
+        "Do not claim to have executed commands or searched websites without tools.",
     };
     const contextMsg = {
       role: "user" as const,
@@ -763,67 +715,32 @@ export function AudioTagEditor() {
     chatAbortRef.current = abortController;
 
     try {
-      const filesPerRequest = clampPositiveInteger(openAI.filesPerRequest, DEFAULT_OPENAI.filesPerRequest);
-      const concurrency = clampPositiveInteger(openAI.concurrency, DEFAULT_OPENAI.concurrency);
-      const batches = chunkFiles(files, filesPerRequest);
       const url = `${openAI.baseURL.replace(/\/$/, "")}/chat/completions`;
-      const results = await runSettledWithConcurrency(batches, concurrency, async (batch, batchIndex) => {
-        const batchDict: Record<string, AudioTag> = {};
-        for (const f of batch) batchDict[f.id] = compactTagsForChat(f.savedTags);
-        const batchContextMsg = {
-          ...contextMsg,
-          content: "Files:\n" + JSON.stringify(batchDict, null, 2),
-        };
-
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${openAI.apiKey}`,
-          },
-          signal: abortController.signal,
-          body: JSON.stringify({
-            model: openAI.model,
-            messages: [systemMsg, batchContextMsg, ...chatMessages, userMsg],
-          }),
-        });
-        if (!res.ok) throw new Error(`Batch ${batchIndex + 1}/${batches.length}: ${res.status} ${res.statusText}`);
-        const data = await res.json();
-        const content: string = data?.choices?.[0]?.message?.content ?? "";
-
-        const match = content.match(/\{[\s\S]*\}/);
-        if (!match) throw new Error(`Batch ${batchIndex + 1}/${batches.length}: response did not contain a JSON object`);
-        const parsed = JSON.parse(match[0]);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-          throw new Error(`Batch ${batchIndex + 1}/${batches.length}: response was not a JSON object`);
-        }
-        const updates = parsed as Record<string, Record<string, string | null>>;
-        applyChatChanges(updates);
-        return updates;
-      }, abortController.signal);
-
-      const failures = results.filter((result) => !result.ok) as { ok: false; error: unknown }[];
-      const merged = Object.assign(
-        {},
-        ...results.flatMap((result) => (result.ok ? [result.value] : []))
-      ) as Record<string, Record<string, string | null>>;
-      const count = Object.keys(merged).length;
-      if (abortController.signal.aborted) {
-        setChatMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: `Stopped after applying changes to ${count} file(s).` },
-        ]);
-        return;
-      }
-      if (failures.length > 0) {
-        const firstError = failures[0].error instanceof Error ? failures[0].error.message : String(failures[0].error);
-        throw new Error(`${failures.length}/${batches.length} request(s) failed after applying ${count} file(s): ${firstError}`);
-      }
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openAI.apiKey}`,
+        },
+        signal: abortController.signal,
+        body: JSON.stringify({
+          model: openAI.model,
+          messages: [systemMsg, contextMsg, ...chatMessages, userMsg],
+        }),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const completion = await res.json();
+      const content = completion?.choices?.[0]?.message?.content;
+      if (typeof content !== "string" || !content.trim()) throw new Error("LLM 未返回对话内容。");
       setChatMessages((prev) => [
         ...prev,
-        { role: "assistant", content: `Applied changes to ${count} file(s) across ${batches.length} request(s).` },
+        { role: "assistant", content },
       ]);
     } catch (err) {
+      if (abortController.signal.aborted) {
+        setChatMessages((prev) => [...prev, { role: "assistant", content: "对话已停止。" }]);
+        return;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       setChatError(msg);
       setChatMessages((prev) => [...prev, { role: "assistant", content: `Error: ${msg}` }]);
@@ -831,7 +748,7 @@ export function AudioTagEditor() {
       if (chatAbortRef.current === abortController) chatAbortRef.current = null;
       setChatSending(false);
     }
-  }, [chatInput, chatSending, chatMessages, files, isFileOperationBusy, isScanning, projectRoot, selectedId, openAI, applyChatChanges]);
+  }, [chatInput, chatSending, chatMessages, files, isFileOperationBusy, isScanning, projectRoot, selectedId, openAI]);
 
   const goNext = useCallback(() => {
     if (isFileOperationBusy) return;
@@ -1097,7 +1014,7 @@ export function AudioTagEditor() {
                 <div>
                   <h2 className="text-sm text-[#1f2328]">OpenAI-compatible API</h2>
                   <p className="text-xs text-[#656d76] mt-1">
-                    Used by the Chat panel to ask an LLM to modify tags. Any OpenAI-compatible endpoint works.
+                    Used for conversations and commands. Any OpenAI-compatible endpoint works.
                   </p>
                 </div>
                 <div className="bg-white border border-[#d0d7de] rounded p-4 space-y-3">
@@ -1154,7 +1071,7 @@ export function AudioTagEditor() {
                     </label>
                   </div>
                   <p className="text-xs text-[#656d76]">
-                    Chat sends files in batches in the background, but keeps a single user message and a single assistant result in the chat history.
+                    /meta completes metadata in batches using these limits. Normal conversations use a single request.
                   </p>
                 </div>
               </div>
@@ -1642,7 +1559,7 @@ export function AudioTagEditor() {
             <div className="flex-1 overflow-y-auto thin-scrollbar p-3 space-y-2">
               {chatMessages.length === 0 && (
                 <div className="text-[10px] text-[#8c959f] italic">
-                  Ask the AI to modify tags across all files. It will see every file's current tags as JSON.
+                  Chat normally, or send /meta to complete metadata, /organise to organise files, and /image to download artwork.
                 </div>
               )}
               {chatMessages.map((m, i) => (
@@ -1673,7 +1590,7 @@ export function AudioTagEditor() {
                   </div>
                 ) : dirtyFiles.length > 0 && (
                   <div className="min-w-0 flex-1 text-[10px] leading-4 text-[#9a6700] px-1 whitespace-normal break-words">
-                    Discard or save pending changes before chatting.
+                    Save or discard pending changes before running commands. You can still chat.
                   </div>
                 )}
                 <button
@@ -1714,14 +1631,14 @@ export function AudioTagEditor() {
                     sendChat();
                   }
                 }}
-                disabled={dirtyFiles.length > 0 || chatSending || isFileOperationBusy || isScanning}
-                placeholder={activeCommand?.progressMessage ?? (isFileOperationBusy ? "Saving changes..." : dirtyFiles.length > 0 ? "Pending changes block chat" : "Describe the changes you want…")}
+                disabled={chatSending || isFileOperationBusy || isScanning}
+                placeholder={activeCommand?.progressMessage ?? (isFileOperationBusy ? "Saving changes..." : "Send a message or choose a /command…")}
                 rows={5}
                 className="w-full px-2 py-1.5 text-xs bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da] resize-none disabled:bg-[#f6f8fa] disabled:cursor-not-allowed"
               />
               <button
                 onClick={sendChat}
-                disabled={dirtyFiles.length > 0 || chatSending || isFileOperationBusy || isScanning || !chatInput.trim()}
+                disabled={chatSending || isFileOperationBusy || isScanning || !chatInput.trim()}
                 className="w-full px-2 py-1.5 text-xs rounded bg-[#0969da] text-white hover:bg-[#0860c4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {activeCommand ? `${activeCommand.name}…` : chatSending ? "Sending…" : "Send"}
