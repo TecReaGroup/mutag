@@ -36,6 +36,7 @@ export type SaveTagsResult =
     };
 
 export interface MutagConfig {
+  models?: MutagConfig["openAI"][];
   lastFolder: string;
   openAI: {
     baseURL: string;

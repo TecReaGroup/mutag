@@ -330,6 +330,11 @@ export function AudioTagEditor() {
   const [addingDefault, setAddingDefault] = useState(false);
   const [rightTab, setRightTab] = useState<"pending" | "chat">("pending");
   const [openAI, setOpenAI] = useState(DEFAULT_OPENAI);
+  const [models, setModels] = useState<MutagConfig["openAI"][]>([]);
+  const [modelDraft, setModelDraft] = useState(DEFAULT_OPENAI);
+  const [modelError, setModelError] = useState("");
+  const [editingModel, setEditingModel] = useState<string | null>(null);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [fileSearch, setFileSearch] = useState("");
@@ -397,6 +402,7 @@ export function AudioTagEditor() {
     const config: MutagConfig = {
       lastFolder: projectRoot,
       openAI,
+      models,
       audioTag: { defaultFieldKeys },
       layout: { leftW, rightW },
     };
@@ -404,7 +410,7 @@ export function AudioTagEditor() {
     configSaveTimerRef.current = setTimeout(() => {
       window.audioTagApi?.saveConfig(config).catch((err) => console.warn("Failed to save mutag config", err));
     }, 250);
-  }, [configLoaded, defaultFieldKeys, leftW, openAI, projectRoot, rightW]);
+  }, [configLoaded, defaultFieldKeys, leftW, openAI, models, projectRoot, rightW]);
 
   useEffect(() => {
     if (!configLoaded || !projectRoot || !window.audioTagApi || activeCommand) return;
@@ -471,6 +477,11 @@ export function AudioTagEditor() {
             filesPerRequest: clampPositiveInteger(config.openAI.filesPerRequest, prev.filesPerRequest),
             concurrency: clampPositiveInteger(config.openAI.concurrency, prev.concurrency),
           }));
+          setModelDraft({ ...DEFAULT_OPENAI, ...config.openAI });
+          const restoredModels = (Array.isArray(config.models) ? config.models : [config.openAI])
+            .filter((entry, index, entries) => entry.model?.trim() && entries.findIndex((other) => other.model.trim() === entry.model.trim()) === index)
+            .map((entry) => ({ ...DEFAULT_OPENAI, ...entry, model: entry.model.trim() }));
+          setModels(restoredModels);
         }
         if (Array.isArray(config?.audioTag?.defaultFieldKeys)) {
           const restored = config.audioTag.defaultFieldKeys.map(normalizeTagKey).filter((key) => key !== "image");
@@ -1017,12 +1028,38 @@ export function AudioTagEditor() {
                     Used for conversations and commands. Any OpenAI-compatible endpoint works.
                   </p>
                 </div>
-                <div className="bg-white border border-[#d0d7de] rounded p-4 space-y-3">
+                {[...models, ...(editingModel === "" ? [{ ...DEFAULT_OPENAI, model: "" }] : [])].map((profile) => (
+                <div key={profile.model} className="bg-white border border-[#d0d7de] rounded overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2">
+                    <button
+                      aria-expanded={editingModel === profile.model}
+                      className="flex flex-1 min-w-0 items-center justify-between gap-3 text-left text-xs"
+                      onClick={() => {
+                        if (editingModel === profile.model) { setEditingModel(null); }
+                        else { setEditingModel(profile.model); setModelDraft(profile); }
+                        setModelError("");
+                      }}
+                    >
+                      <span className="min-w-0 break-all">{profile.model || "新模型"}{profile.model && profile.model === openAI.model ? " · 当前模型" : ""}</span>
+                      <ChevronRight size={16} className={`shrink-0 text-[#656d76] transition-transform ${editingModel === profile.model ? "rotate-90" : ""}`} />
+                    </button>
+                  </div>
+                {editingModel === profile.model && <div className="border-t border-[#d0d7de] p-4 space-y-3">
+                  <label className="block">
+                    <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">Model</div>
+                    <input
+                      autoFocus
+                      value={modelDraft.model}
+                      onChange={(e) => { setModelError(""); setModelDraft((s) => ({ ...s, model: e.target.value })); }}
+                      placeholder="gpt-4o-mini"
+                      className="w-full h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
+                    />
+                  </label>
                   <label className="block">
                     <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">Base URL</div>
                     <input
-                      value={openAI.baseURL}
-                      onChange={(e) => setOpenAI((s) => ({ ...s, baseURL: e.target.value }))}
+                      value={modelDraft.baseURL}
+                      onChange={(e) => setModelDraft((s) => ({ ...s, baseURL: e.target.value }))}
                       placeholder="https://api.openai.com/v1"
                       className="w-full h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
                     />
@@ -1031,18 +1068,9 @@ export function AudioTagEditor() {
                     <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">API Key</div>
                     <input
                       type="password"
-                      value={openAI.apiKey}
-                      onChange={(e) => setOpenAI((s) => ({ ...s, apiKey: e.target.value }))}
+                      value={modelDraft.apiKey}
+                      onChange={(e) => setModelDraft((s) => ({ ...s, apiKey: e.target.value }))}
                       placeholder="sk-..."
-                      className="w-full h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
-                    />
-                  </label>
-                  <label className="block">
-                    <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">Model</div>
-                    <input
-                      value={openAI.model}
-                      onChange={(e) => setOpenAI((s) => ({ ...s, model: e.target.value }))}
-                      placeholder="gpt-4o-mini"
                       className="w-full h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
                     />
                   </label>
@@ -1053,8 +1081,8 @@ export function AudioTagEditor() {
                         type="number"
                         min={1}
                         step={1}
-                        value={openAI.filesPerRequest}
-                        onChange={(e) => setOpenAI((s) => ({ ...s, filesPerRequest: clampPositiveInteger(e.target.valueAsNumber, DEFAULT_OPENAI.filesPerRequest) }))}
+                        value={modelDraft.filesPerRequest}
+                        onChange={(e) => setModelDraft((s) => ({ ...s, filesPerRequest: clampPositiveInteger(e.target.valueAsNumber, DEFAULT_OPENAI.filesPerRequest) }))}
                         className="w-full h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
                       />
                     </label>
@@ -1064,8 +1092,8 @@ export function AudioTagEditor() {
                         type="number"
                         min={1}
                         step={1}
-                        value={openAI.concurrency}
-                        onChange={(e) => setOpenAI((s) => ({ ...s, concurrency: clampPositiveInteger(e.target.valueAsNumber, DEFAULT_OPENAI.concurrency) }))}
+                        value={modelDraft.concurrency}
+                        onChange={(e) => setModelDraft((s) => ({ ...s, concurrency: clampPositiveInteger(e.target.valueAsNumber, DEFAULT_OPENAI.concurrency) }))}
                         className="w-full h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
                       />
                     </label>
@@ -1073,7 +1101,43 @@ export function AudioTagEditor() {
                   <p className="text-xs text-[#656d76]">
                     /meta completes metadata in batches using these limits. Normal conversations use a single request.
                   </p>
+                  {modelError && <p role="alert" className="text-xs text-[#cf222e]">{modelError}</p>}
+                  <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => {
+                      const model = modelDraft.model.trim();
+                      if (!model || !modelDraft.baseURL.trim()) { setModelError("Base URL 和 Model 不能为空。"); return; }
+                      if (models.some((entry) => entry.model === model && entry.model !== profile.model)) { setModelError("Model 已存在，不能重复。"); return; }
+                      const updated = { ...modelDraft, model, baseURL: modelDraft.baseURL.trim() };
+                      setModels((entries) => profile.model
+                        ? entries.map((entry) => entry.model === profile.model ? updated : entry)
+                        : [...entries, updated]);
+                      if (!models.length || openAI.model === profile.model) setOpenAI(updated);
+                      setModelError("");
+                      setEditingModel(null);
+                    }}
+                    className="px-4 py-2 text-xs rounded bg-[#0969da] text-white hover:bg-[#0860c4]"
+                  >保存</button>
+                  <button
+                    aria-label={`删除 ${profile.model || "新模型"}`}
+                    className="px-4 py-2 text-xs rounded border border-[#cf222e] text-[#cf222e] hover:bg-[#ffebe9]"
+                    onClick={() => {
+                      const remaining = models.filter((entry) => entry.model !== profile.model);
+                      setModels(remaining);
+                      if (profile.model === openAI.model) setOpenAI(remaining[0] ?? { ...DEFAULT_OPENAI, model: "", apiKey: "" });
+                      setEditingModel(null);
+                      setModelError("");
+                    }}
+                  >删除</button>
+                  </div>
+                </div>}
                 </div>
+                ))}
+                <button
+                  disabled={editingModel === ""}
+                  onClick={() => { setEditingModel(""); setModelDraft({ ...DEFAULT_OPENAI, model: "", apiKey: "" }); setModelError(""); }}
+                  className="flex items-center justify-center gap-1 w-full px-3 py-2 text-xs rounded border border-dashed border-[#d0d7de] text-[#0969da] hover:bg-[#ddf4ff] disabled:opacity-40"
+                ><Plus size={13} /> Add</button>
               </div>
             )}
           </div>
@@ -1621,6 +1685,7 @@ export function AudioTagEditor() {
                   </button>
                 ))}
               </div>
+              <div className="relative">
               <textarea
                 ref={chatInputRef}
                 value={chatInput}
@@ -1634,8 +1699,51 @@ export function AudioTagEditor() {
                 disabled={chatSending || isFileOperationBusy || isScanning}
                 placeholder={activeCommand?.progressMessage ?? (isFileOperationBusy ? "Saving changes..." : "Send a message or choose a /command…")}
                 rows={5}
-                className="w-full px-2 py-1.5 text-xs bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da] resize-none disabled:bg-[#f6f8fa] disabled:cursor-not-allowed"
+                className="block w-full px-2 pt-1.5 pb-10 text-xs bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da] resize-none disabled:bg-[#f6f8fa] disabled:cursor-not-allowed"
               />
+              <div
+                className="absolute bottom-2 left-2 right-2 flex justify-start"
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) setModelMenuOpen(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setModelMenuOpen(false);
+                    event.currentTarget.querySelector<HTMLButtonElement>("button")?.focus();
+                  }
+                }}
+              >
+                <button
+                  type="button"
+                  aria-label="选择模型"
+                  aria-expanded={modelMenuOpen && !chatSending && !isFileOperationBusy}
+                  aria-controls="chat-model-menu"
+                  disabled={chatSending || isFileOperationBusy || !models.length}
+                  onClick={() => setModelMenuOpen((open) => !open)}
+                  className="flex items-center gap-2 max-w-full rounded border border-[#d0d7de] bg-white px-2 py-1 text-xs text-[#656d76] outline-none focus:border-[#0969da] disabled:opacity-40"
+                >
+                  <span className="truncate">{openAI.model || "请在 LLM 设置中添加模型"}</span>
+                  <ChevronRight size={12} className={`shrink-0 transition-transform ${modelMenuOpen ? "-rotate-90" : ""}`} />
+                </button>
+                {modelMenuOpen && !chatSending && !isFileOperationBusy && (
+                  <div id="chat-model-menu" aria-label="模型列表" className="absolute bottom-full left-0 z-20 mb-1 max-h-48 w-full overflow-y-auto rounded border border-[#d0d7de] bg-white p-1 shadow-lg">
+                    {models.map((profile) => (
+                      <button
+                        key={profile.model}
+                        type="button"
+                        aria-pressed={profile.model === openAI.model}
+                        onClick={(event) => {
+                          setOpenAI(profile);
+                          setModelMenuOpen(false);
+                          event.currentTarget.parentElement?.parentElement?.querySelector<HTMLButtonElement>("button")?.focus();
+                        }}
+                        className={`block w-full rounded px-2 py-1.5 text-left text-xs break-all hover:bg-[#ddf4ff] focus:bg-[#ddf4ff] outline-none ${profile.model === openAI.model ? "bg-[#ddf4ff] text-[#0969da]" : "text-[#656d76]"}`}
+                      >{profile.model}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              </div>
               <button
                 onClick={sendChat}
                 disabled={chatSending || isFileOperationBusy || isScanning || !chatInput.trim()}
