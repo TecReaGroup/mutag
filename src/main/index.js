@@ -248,11 +248,6 @@ function setCoverImage(tag, value) {
   tag.pictures = [picture, ...withoutFrontCover];
 }
 
-function dataUrlExtension(value) {
-  const mimeType = parseImageDataUrl(value)?.mimeType;
-  return Picture.getExtensionFromMimeType(mimeType) ?? ".jpg";
-}
-
 function readTagValue(tag, key) {
   key = TAG_KEY_ALIASES[key] ?? key;
   if (key === IMAGE_TAG_KEY) return readCoverImage(tag);
@@ -366,18 +361,21 @@ async function validateTitleBeforeSave(filePath, tags) {
     const siblingPath = path.join(dir, entry.name);
     if (path.resolve(siblingPath) === path.resolve(filePath)) continue;
 
+    let siblingTitle;
     try {
-      if (normalizeTitleForCompare(readTags(siblingPath).title) === title) {
-        throw new Error(`Another audio file in this folder already has the title "${String(tags.title).trim()}"`);
-      }
+      siblingTitle = readTags(siblingPath).title;
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith("Another audio file")) throw error;
       console.warn(`Skipping unreadable audio file during title validation: ${siblingPath}`, error);
+      continue;
+    }
+    if (normalizeTitleForCompare(siblingTitle) === title) {
+      throw new Error(`Another audio file in this folder already has the title "${String(tags.title).trim()}"`);
     }
   }
 }
 
-async function renameFileForTitle(filePath, originalTags, savedTags) {
+/** Resolve the filename implied by a changed title and its track number. */
+function resolveTitlePath(filePath, originalTags, savedTags) {
   const titleChanged = firstString(originalTags?.title).trim() !== firstString(savedTags?.title).trim();
   const title = sanitizeFileNamePart(savedTags?.title);
   if (!titleChanged || !title) return filePath;
@@ -388,23 +386,12 @@ async function renameFileForTitle(filePath, originalTags, savedTags) {
   const ext = path.extname(filePath);
   const nextPath = path.join(dir, `${prefix}${title}${ext}`);
 
-  if (path.resolve(nextPath) === path.resolve(filePath)) return filePath;
-  if (await pathExists(nextPath)) {
-    throw new Error(`A file named "${path.basename(nextPath)}" already exists in this folder`);
-  }
-  await fs.rename(filePath, nextPath);
-  return nextPath;
+  return path.resolve(nextPath) === path.resolve(filePath) ? filePath : nextPath;
 }
 
-async function validateRenameBeforeSave(filePath, originalTags, nextTags) {
-  const titleChanged = firstString(originalTags?.title).trim() !== firstString(nextTags?.title).trim();
-  const title = sanitizeFileNamePart(nextTags?.title);
-  if (!titleChanged || !title) return;
-
-  const track = parsePositiveInt(nextTags?.track_number);
-  const prefix = track > 0 ? `${String(track).padStart(2, "0")} ` : "";
-  const nextPath = path.join(path.dirname(filePath), `${prefix}${title}${path.extname(filePath)}`);
-  if (path.resolve(nextPath) !== path.resolve(filePath) && await pathExists(nextPath)) {
+/** Reject an occupied rename destination without touching the audio file. */
+async function validateRenameDestination(filePath, nextPath) {
+  if (nextPath !== filePath && await pathExists(nextPath)) {
     throw new Error(`A file named "${path.basename(nextPath)}" already exists in this folder`);
   }
 }
@@ -416,14 +403,6 @@ function setString(tag, key, value) {
 function setStringArray(tag, key, value) {
   const normalized = normalizeTagValue(value).trim();
   tag[key] = normalized ? [normalized] : [];
-}
-
-function clearTagValue(tag, key) {
-  key = TAG_KEY_ALIASES[key] ?? key;
-  if (key === IMAGE_TAG_KEY) setCoverImage(tag, "");
-  else if (key in ARRAY_TAG_PROPS) setStringArray(tag, ARRAY_TAG_PROPS[key], "");
-  else if (key in UINT_TAG_PROPS) tag[UINT_TAG_PROPS[key]] = 0;
-  else if (key in STRING_TAG_PROPS) setString(tag, STRING_TAG_PROPS[key], "");
 }
 
 function writeTagValue(tag, key, value) {
@@ -494,15 +473,15 @@ async function writeTags(filePath, tags) {
   const originalTags = readTags(filePath);
   const changes = buildTagChanges(originalTags, tags);
   const savedTags = applyTagChanges(originalTags, changes);
-  await validateRenameBeforeSave(filePath, originalTags, savedTags);
+  const nextPath = resolveTitlePath(filePath, originalTags, savedTags);
+  await validateRenameDestination(filePath, nextPath);
   const file = File.createFromPath(filePath);
   try {
     repairId3v2TextFrames(file);
     const tag = file.tag;
 
     for (const { key, value } of changes) {
-      if (value === "") clearTagValue(tag, key);
-      else writeTagValue(tag, key, value);
+      writeTagValue(tag, key, value);
     }
 
     try {
@@ -524,7 +503,11 @@ async function writeTags(filePath, tags) {
     file.dispose();
   }
 
-  const nextPath = await renameFileForTitle(filePath, originalTags, savedTags);
+  if (nextPath !== filePath) {
+    // Saving can take time; the destination may have appeared since validation.
+    await validateRenameDestination(filePath, nextPath);
+    await fs.rename(filePath, nextPath);
+  }
 
   try {
     return { ok: true, tags: readTags(nextPath), path: nextPath, name: path.basename(nextPath) };
@@ -606,7 +589,8 @@ ipcMain.handle("audio-tags:export-image", async (_event, payload) => {
     if (!payload || typeof payload.path !== "string") throw new Error("Missing audio file path.");
     const image = readTags(payload.path).image;
     if (!image) throw new Error("This audio file has no cover image.");
-    const ext = dataUrlExtension(image);
+    const coverImage = parseImageDataUrl(image);
+    const ext = Picture.getExtensionFromMimeType(coverImage.mimeType) ?? ".jpg";
     const audioName = sanitizeFileNamePart(path.basename(payload.path, path.extname(payload.path))) || "cover";
     const result = await dialog.showSaveDialog({
       defaultPath: path.join(path.dirname(payload.path), `${audioName}-cover${ext}`),
@@ -614,8 +598,7 @@ ipcMain.handle("audio-tags:export-image", async (_event, payload) => {
     });
     if (result.canceled || !result.filePath) return { ok: false, canceled: true };
 
-    const parsed = parseImageDataUrl(image);
-    await fs.writeFile(result.filePath, parsed.buffer);
+    await fs.writeFile(result.filePath, coverImage.buffer);
     return { ok: true, path: result.filePath };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
