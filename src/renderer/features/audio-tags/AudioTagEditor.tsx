@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, FolderOpen, Settings, ArrowLeft, GripVertical, Undo2, Upload, Download, Image as ImageIcon } from "lucide-react";
 import type { AudioFile, AudioTag, MutagConfig, MutagProjectState, OpenFolderResult } from "@/shared/audio-tags";
+import { CHAT_COMMANDS, resolveChatCommand } from "./chat-commands";
+import type { ChatCommand } from "./chat-commands";
 
 const DEMO_FILES: AudioFile[] = [
   {
@@ -363,6 +365,7 @@ export function AudioTagEditor() {
   const [chatInput, setChatInput] = useState("");
   const [fileSearch, setFileSearch] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [activeCommand, setActiveCommand] = useState<ChatCommand | null>(null);
   const [acceptAllProgress, setAcceptAllProgress] = useState<{ done: number; total: number } | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -373,6 +376,7 @@ export function AudioTagEditor() {
   const configSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const chatAbortRef = useRef<AbortController | null>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const scanStartRef = useRef(0);
   const MIN_SCAN_MS = 300;
 
@@ -392,7 +396,7 @@ export function AudioTagEditor() {
       )
     : false;
   const hasPendingChanges = hasAnyChange;
-  const isAcceptingAll = acceptAllProgress !== null;
+  const isFileOperationBusy = acceptAllProgress !== null || activeCommand !== null;
   const visibleFiles = files.filter((f) => fuzzyIncludes(f.name, fileSearch));
 
   useEffect(() => {
@@ -434,7 +438,7 @@ export function AudioTagEditor() {
   }, [configLoaded, defaultFieldKeys, leftW, openAI, projectRoot, rightW]);
 
   useEffect(() => {
-    if (!configLoaded || !projectRoot || !window.audioTagApi) return;
+    if (!configLoaded || !projectRoot || !window.audioTagApi || activeCommand) return;
     if (projectSaveTimerRef.current) clearTimeout(projectSaveTimerRef.current);
 
     const state: MutagProjectState = {
@@ -453,7 +457,7 @@ export function AudioTagEditor() {
     projectSaveTimerRef.current = setTimeout(() => {
       window.audioTagApi?.saveProjectState(projectRoot, state).catch((err) => console.warn("Failed to save project state", err));
     }, 250);
-  }, [chatMessages, configLoaded, files, projectRoot, selectedId]);
+  }, [chatMessages, configLoaded, files, projectRoot, selectedId, activeCommand]);
 
   useEffect(() => {
     return () => {
@@ -463,7 +467,7 @@ export function AudioTagEditor() {
   }, []);
 
   const handleOpenFolder = useCallback(async () => {
-    if (!window.audioTagApi || isAcceptingAll) return;
+    if (!window.audioTagApi || isFileOperationBusy) return;
 
     setIsScanning(true);
     scanStartRef.current = Date.now();
@@ -479,7 +483,7 @@ export function AudioTagEditor() {
       if (remaining > 0) setTimeout(() => setIsScanning(false), remaining);
       else setIsScanning(false);
     }
-  }, [isAcceptingAll]);
+  }, [isFileOperationBusy]);
 
   useEffect(() => {
     if (!window.audioTagApi) { setConfigLoaded(true); setIsScanning(false); return; }
@@ -531,7 +535,7 @@ export function AudioTagEditor() {
 
   const updateTempField = useCallback(
     (field: string, value: string) => {
-      if (isAcceptingAll) return;
+      if (isFileOperationBusy) return;
       const key = normalizeTagKey(field);
       setSaveError(null);
       setFiles((prev) =>
@@ -545,7 +549,7 @@ export function AudioTagEditor() {
         })
       );
     },
-    [isAcceptingAll, selectedId]
+    [isFileOperationBusy, selectedId]
   );
 
   const deleteField = useCallback(
@@ -556,7 +560,7 @@ export function AudioTagEditor() {
   );
 
   const importImage = useCallback(async () => {
-    if (isAcceptingAll || !hasSelectedFile) return;
+    if (isFileOperationBusy || !hasSelectedFile) return;
     setSaveError(null);
     try {
       const result = await window.audioTagApi?.importImage();
@@ -568,10 +572,10 @@ export function AudioTagEditor() {
     } catch (err) {
       setSaveError(formatSaveError(err));
     }
-  }, [hasSelectedFile, isAcceptingAll, updateTempField]);
+  }, [hasSelectedFile, isFileOperationBusy, updateTempField]);
 
   const exportImage = useCallback(async () => {
-    if (isAcceptingAll || !hasSelectedFile) return;
+    if (isFileOperationBusy || !hasSelectedFile) return;
     setSaveError(null);
     try {
       const result = await window.audioTagApi?.exportImage(selectedFile.path);
@@ -579,10 +583,10 @@ export function AudioTagEditor() {
     } catch (err) {
       setSaveError(formatSaveError(err));
     }
-  }, [hasSelectedFile, isAcceptingAll, selectedFile.path]);
+  }, [hasSelectedFile, isFileOperationBusy, selectedFile.path]);
 
   const saveFile = useCallback(async () => {
-    if (isAcceptingAll) return;
+    if (isFileOperationBusy) return;
     const current = files.find((f) => f.id === selectedId);
     if (!current) return;
 
@@ -612,22 +616,22 @@ export function AudioTagEditor() {
     );
     setSelectedId(savedPath);
     setExtraFields((prev) => prev.filter(({ key }) => getTagValue(savedTags, key) !== ""));
-  }, [files, isAcceptingAll, selectedId]);
+  }, [files, isFileOperationBusy, selectedId]);
 
   const discardChanges = useCallback(() => {
-    if (isAcceptingAll) return;
+    if (isFileOperationBusy) return;
     setFiles((prev) =>
       prev.map((f) => (f.id !== selectedId ? f : { ...f, tempTags: null }))
     );
-  }, [isAcceptingAll, selectedId]);
+  }, [isFileOperationBusy, selectedId]);
 
   const discardAll = useCallback(() => {
-    if (isAcceptingAll) return;
+    if (isFileOperationBusy) return;
     setFiles((prev) => prev.map((f) => ({ ...f, tempTags: null })));
-  }, [isAcceptingAll]);
+  }, [isFileOperationBusy]);
 
   const acceptAll = useCallback(async () => {
-    if (isAcceptingAll) return;
+    if (isFileOperationBusy) return;
     const changedFiles = files.filter((f) => f.tempTags !== null);
     if (changedFiles.length === 0) return;
 
@@ -671,7 +675,7 @@ export function AudioTagEditor() {
     } finally {
       setAcceptAllProgress(null);
     }
-  }, [files, isAcceptingAll]);
+  }, [files, isFileOperationBusy]);
 
   const applyChatChanges = useCallback((updates: Record<string, Record<string, string | null>>) => {
     setFiles((prev) =>
@@ -694,10 +698,47 @@ export function AudioTagEditor() {
 
   const sendChat = useCallback(async () => {
     const text = chatInput.trim();
-    if (!text || chatSending || isAcceptingAll) return;
+    if (!text || chatSending || isFileOperationBusy || isScanning || files.some((file) => file.tempTags &&
+      Object.keys({ ...file.savedTags, ...file.tempTags }).some((key) => getTagValue(file.tempTags, key) !== getTagValue(file.savedTags, key)))) return;
     setChatError(null);
 
     const userMsg = { role: "user" as const, content: text };
+    let command: ChatCommand | null;
+    try {
+      command = resolveChatCommand(text);
+    } catch (error) {
+      const message = formatSaveError(error);
+      setChatError(message);
+      setChatMessages((prev) => [...prev, userMsg, { role: "assistant", content: message }]);
+      return;
+    }
+    if (command) {
+      setChatMessages((prev) => [...prev, userMsg]);
+      setChatInput("");
+      setActiveCommand(command);
+      setChatSending(true);
+      if (projectSaveTimerRef.current) clearTimeout(projectSaveTimerRef.current);
+      try {
+        const outcome = await command.execute({
+          projectRoot,
+          files,
+          selectedId,
+          chatMessages: [...chatMessages, userMsg],
+          openAI,
+        });
+        setFiles(outcome.files);
+        setSelectedId(outcome.selectedId);
+        setChatMessages((prev) => [...prev, { role: "assistant", content: outcome.message }]);
+      } catch (error) {
+        const message = formatSaveError(error);
+        setChatError(message);
+        setChatMessages((prev) => [...prev, { role: "assistant", content: `${command.name} 执行失败：${message}` }]);
+      } finally {
+        setActiveCommand(null);
+        setChatSending(false);
+      }
+      return;
+    }
     const fileDict: Record<string, AudioTag> = {};
     for (const f of files) fileDict[f.id] = compactTagsForChat(f.savedTags);
     const systemMsg = {
@@ -790,16 +831,16 @@ export function AudioTagEditor() {
       if (chatAbortRef.current === abortController) chatAbortRef.current = null;
       setChatSending(false);
     }
-  }, [chatInput, chatSending, chatMessages, files, isAcceptingAll, openAI, applyChatChanges]);
+  }, [chatInput, chatSending, chatMessages, files, isFileOperationBusy, isScanning, projectRoot, selectedId, openAI, applyChatChanges]);
 
   const goNext = useCallback(() => {
-    if (isAcceptingAll) return;
+    if (isFileOperationBusy) return;
     if (selectedIndex >= 0 && selectedIndex < files.length - 1) setSelectedId(files[selectedIndex + 1].id);
-  }, [files, isAcceptingAll, selectedIndex]);
+  }, [files, isFileOperationBusy, selectedIndex]);
   const goPrev = useCallback(() => {
-    if (isAcceptingAll) return;
+    if (isFileOperationBusy) return;
     if (selectedIndex > 0) setSelectedId(files[selectedIndex - 1].id);
-  }, [files, isAcceptingAll, selectedIndex]);
+  }, [files, isFileOperationBusy, selectedIndex]);
 
   useEffect(() => {
     if (showSettings || !hasSelectedFile) return;
@@ -924,8 +965,8 @@ export function AudioTagEditor() {
       <div className="flex flex-col h-screen w-full bg-[#f6f8fa] text-[#1f2328] font-mono overflow-hidden border-t border-[#d0d7de]">
         <div className={`${HEADER_H} px-4 flex items-center gap-2 border-b border-[#d0d7de] bg-white flex-shrink-0`}>
           <button
-            onClick={() => { if (!isAcceptingAll) setShowSettings(false); }}
-            disabled={isAcceptingAll}
+            onClick={() => { if (!isFileOperationBusy) setShowSettings(false); }}
+            disabled={isFileOperationBusy}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[#656d76] hover:text-[#1f2328] hover:bg-[#f6f8fa] transition-colors"
           >
             <ArrowLeft size={14} /> Back
@@ -941,8 +982,8 @@ export function AudioTagEditor() {
               return (
                 <button
                   key={c.key}
-                  onClick={() => { if (!isAcceptingAll) setSettingsCategory(c.key); }}
-                  disabled={isAcceptingAll}
+                  onClick={() => { if (!isFileOperationBusy) setSettingsCategory(c.key); }}
+                  disabled={isFileOperationBusy}
                   className={`w-full text-left px-4 py-2 text-xs transition-colors border-l-2 ${
                     active
                       ? "bg-[#ddf4ff] border-[#0969da] text-[#1f2328]"
@@ -995,7 +1036,7 @@ export function AudioTagEditor() {
                         <span className="text-[10px] text-[#8c959f] uppercase tracking-wider w-6">{idx + 1}</span>
                         <span className="text-sm text-[#1f2328] flex-1">{labelOf(key)}</span>
                         <button
-                          onClick={() => { if (!isAcceptingAll) removeDefault(key); }}
+                          onClick={() => { if (!isFileOperationBusy) removeDefault(key); }}
                           title="Remove from defaults"
                           className="opacity-0 group-hover:opacity-100 text-[#656d76] hover:text-[#cf222e] transition-opacity"
                         >
@@ -1011,7 +1052,7 @@ export function AudioTagEditor() {
                         <div className="h-8 px-3 flex items-center justify-between border-b border-[#d0d7de] bg-[#f6f8fa]">
                           <span className="text-[10px] text-[#656d76] uppercase tracking-wider">Choose default field</span>
                           <button
-                            onClick={() => { if (!isAcceptingAll) setAddingDefault(false); }}
+                            onClick={() => { if (!isFileOperationBusy) setAddingDefault(false); }}
                             className="h-6 w-6 flex items-center justify-center text-[#656d76] hover:text-[#1f2328] transition-colors"
                             title="Close"
                           >
@@ -1025,7 +1066,7 @@ export function AudioTagEditor() {
                             availableDefaultFields.map(({ key, label }) => (
                               <button
                                 key={key}
-                                onClick={() => { if (!isAcceptingAll) { addDefault(key); setAddingDefault(false); } }}
+                                onClick={() => { if (!isFileOperationBusy) { addDefault(key); setAddingDefault(false); } }}
                                 className="w-full px-3 py-2 text-left text-xs text-[#1f2328] hover:bg-[#ddf4ff] hover:text-[#0969da] transition-colors"
                               >
                                 {label}
@@ -1036,8 +1077,8 @@ export function AudioTagEditor() {
                       </div>
                     )}
                     <button
-                      onClick={() => { if (!isAcceptingAll) setAddingDefault((open) => !open); }}
-                      disabled={isAcceptingAll}
+                      onClick={() => { if (!isFileOperationBusy) setAddingDefault((open) => !open); }}
+                      disabled={isFileOperationBusy}
                       className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs border border-dashed rounded transition-colors ${
                         addingDefault
                           ? "border-[#0969da] bg-[#ddf4ff] text-[#0969da]"
@@ -1134,7 +1175,7 @@ export function AudioTagEditor() {
           <span className="text-xs text-[#656d76] uppercase tracking-wider">Audio Files</span>
           <button
             onClick={handleOpenFolder}
-            disabled={isScanning || isAcceptingAll}
+            disabled={isScanning || isFileOperationBusy}
             title="Open folder"
             className="ml-auto flex items-center justify-center w-6 h-6 rounded text-[#656d76] hover:text-[#1f2328] hover:bg-[#f6f8fa] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
           >
@@ -1149,7 +1190,7 @@ export function AudioTagEditor() {
           <input
             value={fileSearch}
             onChange={(e) => setFileSearch(e.target.value)}
-            disabled={isScanning || isAcceptingAll}
+            disabled={isScanning || isFileOperationBusy}
             placeholder="Search"
             className="ml-auto min-w-0 flex-1 h-6 px-2 text-[11px] bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da] disabled:bg-[#f6f8fa] disabled:cursor-not-allowed"
           />
@@ -1183,8 +1224,8 @@ export function AudioTagEditor() {
                   if (node) fileButtonRefs.current.set(f.id, node);
                   else fileButtonRefs.current.delete(f.id);
                 }}
-                onClick={() => { if (!isAcceptingAll) setSelectedId(f.id); }}
-                disabled={isAcceptingAll}
+                onClick={() => { if (!isFileOperationBusy) setSelectedId(f.id); }}
+                disabled={isFileOperationBusy}
                 className={`w-full text-left px-3 py-2 flex items-start gap-2 transition-colors ${
                   isSelected
                     ? "bg-[#ddf4ff] border-l-2 border-[#0969da]"
@@ -1205,8 +1246,8 @@ export function AudioTagEditor() {
       </div>
 
       <button
-        onClick={() => { if (!isAcceptingAll) setShowSettings(true); }}
-        disabled={isAcceptingAll}
+        onClick={() => { if (!isFileOperationBusy) setShowSettings(true); }}
+        disabled={isFileOperationBusy}
         title="Settings"
         className="fixed bottom-3 left-3 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-white border border-[#d0d7de] text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
       >
@@ -1309,7 +1350,7 @@ export function AudioTagEditor() {
                       {isImageField && (
                         <button
                           onClick={exportImage}
-                          disabled={isAcceptingAll || !origVal}
+                          disabled={isFileOperationBusy || !origVal}
                           title="Export image"
                           className="ml-auto h-5 w-5 flex items-center justify-center rounded text-[#656d76] hover:text-[#0969da] hover:bg-[#ddf4ff] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
@@ -1341,7 +1382,7 @@ export function AudioTagEditor() {
                       {isImageField && (
                         <button
                           onClick={importImage}
-                          disabled={isAcceptingAll}
+                          disabled={isFileOperationBusy}
                           title="Import image"
                           className="ml-auto h-5 w-5 flex items-center justify-center rounded text-[#656d76] hover:text-[#0969da] hover:bg-[#ddf4ff] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
@@ -1355,7 +1396,7 @@ export function AudioTagEditor() {
                           <div className="flex-1 px-3 py-2">
                             <CoverPreview image={editVal} />
                           </div>
-                          {!isAcceptingAll && (
+                          {!isFileOperationBusy && (
                             <div className="self-stretch flex items-center flex-shrink-0">
                               {status !== "unchanged" && (
                                 <button
@@ -1385,9 +1426,9 @@ export function AudioTagEditor() {
                             onBlur={() => setTimeout(() => setFocusedField((f) => f === key ? null : f), 150)}
                             placeholder="empty"
                             className="flex-1 min-h-[36px] w-full"
-                            disabled={isAcceptingAll}
+                            disabled={isFileOperationBusy}
                           />
-                          {!isAcceptingAll && focusedField === key && (
+                          {!isFileOperationBusy && focusedField === key && (
                             <div className="self-stretch flex items-center flex-shrink-0">
                               {status !== "unchanged" && (
                                 <button
@@ -1450,8 +1491,8 @@ export function AudioTagEditor() {
                 </div>
               )}
               <button
-                onClick={() => { if (!isAcceptingAll) setIsAdding((open) => !open); }}
-                disabled={isAcceptingAll}
+                onClick={() => { if (!isFileOperationBusy) setIsAdding((open) => !open); }}
+                disabled={isFileOperationBusy}
                 className={`w-full h-11 flex items-center justify-center gap-1.5 px-3 text-xs rounded border border-dashed transition-colors ${
                   isAdding
                     ? "border-[#0969da] bg-[#ddf4ff] text-[#0969da]"
@@ -1477,7 +1518,7 @@ export function AudioTagEditor() {
           <div className="justify-self-start">
             <button
               onClick={goPrev}
-              disabled={isScanning || isAcceptingAll || !hasSelectedFile || selectedIndex === 0}
+              disabled={isScanning || isFileOperationBusy || !hasSelectedFile || selectedIndex === 0}
               className="flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft size={13} /> Prev
@@ -1486,7 +1527,7 @@ export function AudioTagEditor() {
           <div className="justify-self-center">
             <button
               onClick={saveFile}
-              disabled={isScanning || isAcceptingAll || !hasAnyChange}
+              disabled={isScanning || isFileOperationBusy || !hasAnyChange}
               className="flex items-center gap-1.5 px-4 py-1.5 text-xs rounded border border-[#1a7f37] bg-[#1f883d] text-white hover:bg-[#1a7f37] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Save size={13} /> Save
@@ -1495,7 +1536,7 @@ export function AudioTagEditor() {
           <div className="justify-self-end">
             <button
               onClick={goNext}
-              disabled={isScanning || isAcceptingAll || !hasSelectedFile || selectedIndex === files.length - 1}
+              disabled={isScanning || isFileOperationBusy || !hasSelectedFile || selectedIndex === files.length - 1}
               className="flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Next <ChevronRight size={13} />
@@ -1513,8 +1554,8 @@ export function AudioTagEditor() {
           {(["pending", "chat"] as const).map((t) => (
             <button
               key={t}
-              onClick={() => { if (!isAcceptingAll) setRightTab(t); }}
-              disabled={isAcceptingAll}
+              onClick={() => { if (!isFileOperationBusy) setRightTab(t); }}
+              disabled={isFileOperationBusy}
               className={`flex-1 text-xs uppercase tracking-wider transition-colors ${
                 rightTab === t
                   ? "text-[#1f2328] border-b-2 border-[#0969da] -mb-px"
@@ -1553,8 +1594,8 @@ export function AudioTagEditor() {
                 return (
                   <button
                     key={f.id}
-                    onClick={() => { if (!isAcceptingAll) setSelectedId(f.id); }}
-                    disabled={isAcceptingAll}
+                    onClick={() => { if (!isFileOperationBusy) setSelectedId(f.id); }}
+                    disabled={isFileOperationBusy}
                     className={`w-full text-left px-3 py-2 hover:bg-[#f6f8fa] transition-colors ${f.id === selectedId ? "bg-[#ddf4ff]" : ""}`}
                   >
                     <div className="text-xs text-[#1f2328] truncate">{f.name}</div>
@@ -1579,14 +1620,14 @@ export function AudioTagEditor() {
             <div className="border-t border-[#d0d7de] p-2 flex-shrink-0 flex gap-2">
               <button
                 onClick={acceptAll}
-                disabled={dirtyFiles.length === 0 || isAcceptingAll}
+                disabled={dirtyFiles.length === 0 || isFileOperationBusy}
                 className="flex-1 px-2 py-1.5 text-xs rounded bg-[#1f883d] text-white hover:bg-[#1a7f37] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {acceptAllProgress ? `Saving ${acceptAllProgress.done}/${acceptAllProgress.total}` : "Accept all"}
               </button>
               <button
                 onClick={discardAll}
-                disabled={dirtyFiles.length === 0 || isAcceptingAll}
+                disabled={dirtyFiles.length === 0 || isFileOperationBusy}
                 className="flex-1 px-2 py-1.5 text-xs rounded border border-[#d0d7de] text-[#656d76] hover:text-[#cf222e] hover:border-[#cf222e] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#656d76] disabled:hover:border-[#d0d7de] transition-colors bg-white"
               >
                 Discard all
@@ -1618,7 +1659,7 @@ export function AudioTagEditor() {
                 </div>
               ))}
               {chatSending && (
-                <div className="text-[10px] text-[#8c959f] italic">Sending…</div>
+                <div className="text-[10px] text-[#8c959f] italic">{activeCommand?.progressMessage ?? "Sending…"}</div>
               )}
             </div>
             <div className="border-t border-[#d0d7de] p-2 flex-shrink-0 space-y-1.5">
@@ -1626,9 +1667,9 @@ export function AudioTagEditor() {
                 <div className="text-[10px] text-[#cf222e] px-1 truncate" title={chatError}>{chatError}</div>
               )}
               <div className="flex items-center gap-2">
-                {isAcceptingAll ? (
+                {isFileOperationBusy ? (
                   <div className="min-w-0 flex-1 text-[10px] leading-4 text-[#9a6700] px-1 whitespace-normal break-words">
-                    Saving pending changes one by one. Other actions are disabled.
+                    {activeCommand?.progressMessage ?? "Saving pending changes one by one. Other actions are disabled."}
                   </div>
                 ) : dirtyFiles.length > 0 && (
                   <div className="min-w-0 flex-1 text-[10px] leading-4 text-[#9a6700] px-1 whitespace-normal break-words">
@@ -1640,7 +1681,7 @@ export function AudioTagEditor() {
                     if (chatSending) chatAbortRef.current?.abort();
                     else setChatMessages([]);
                   }}
-                  disabled={isAcceptingAll || (!chatSending && !canClearChat)}
+                  disabled={isFileOperationBusy || (!chatSending && !canClearChat)}
                   className={`ml-auto flex-shrink-0 px-2 py-1 text-[10px] rounded border bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
                     chatSending
                       ? "border-[#cf222e] text-[#cf222e] hover:bg-[#ffebe9]"
@@ -1650,7 +1691,21 @@ export function AudioTagEditor() {
                   {chatSending ? "Stop" : "Clear"}
                 </button>
               </div>
+              <div className="flex flex-wrap gap-1">
+                {CHAT_COMMANDS.map((command) => (
+                  <button
+                    key={command.name}
+                    onClick={() => { setChatInput(command.name); chatInputRef.current?.focus(); }}
+                    disabled={dirtyFiles.length > 0 || chatSending || isFileOperationBusy || isScanning}
+                    title={command.description}
+                    className="px-2 py-1 text-[10px] rounded border border-[#d0d7de] text-[#0969da] hover:bg-[#ddf4ff] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {command.name}
+                  </button>
+                ))}
+              </div>
               <textarea
+                ref={chatInputRef}
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -1659,17 +1714,17 @@ export function AudioTagEditor() {
                     sendChat();
                   }
                 }}
-                disabled={dirtyFiles.length > 0 || chatSending || isAcceptingAll}
-                placeholder={isAcceptingAll ? "Saving changes..." : dirtyFiles.length > 0 ? "Pending changes block chat" : "Describe the changes you want…"}
+                disabled={dirtyFiles.length > 0 || chatSending || isFileOperationBusy || isScanning}
+                placeholder={activeCommand?.progressMessage ?? (isFileOperationBusy ? "Saving changes..." : dirtyFiles.length > 0 ? "Pending changes block chat" : "Describe the changes you want…")}
                 rows={5}
                 className="w-full px-2 py-1.5 text-xs bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da] resize-none disabled:bg-[#f6f8fa] disabled:cursor-not-allowed"
               />
               <button
                 onClick={sendChat}
-                disabled={dirtyFiles.length > 0 || chatSending || isAcceptingAll || !chatInput.trim()}
+                disabled={dirtyFiles.length > 0 || chatSending || isFileOperationBusy || isScanning || !chatInput.trim()}
                 className="w-full px-2 py-1.5 text-xs rounded bg-[#0969da] text-white hover:bg-[#0860c4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                {chatSending ? "Sending…" : "Send"}
+                {activeCommand ? `${activeCommand.name}…` : chatSending ? "Sending…" : "Send"}
               </button>
             </div>
           </>

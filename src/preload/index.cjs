@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("audioTagApi", {
   openFolder: () => ipcRenderer.invoke("audio-tags:open-folder"),
   openLastFolder: (root) => ipcRenderer.invoke("audio-tags:open-last-folder", root),
+  organise: (root, openAI) => ipcRenderer.invoke("audio-tags:organise", { root, openAI }),
   loadConfig: () => ipcRenderer.invoke("audio-tags:load-config"),
   saveConfig: (config) => ipcRenderer.invoke("audio-tags:save-config", config),
   saveProjectState: (root, state) =>

@@ -1,10 +1,11 @@
-import type { AudioTag, MutagConfig, MutagProjectState, OpenFolderResult, SaveTagsResult } from "@/shared/audio-tags";
+import type { AudioTag, MutagConfig, MutagProjectState, OpenFolderResult, OrganiseLibraryResult, SaveTagsResult } from "@/shared/audio-tags";
 
 declare global {
   interface Window {
     audioTagApi?: {
       openFolder: () => Promise<OpenFolderResult | null>;
       openLastFolder: (root: string) => Promise<OpenFolderResult | null>;
+      organise: (root: string, openAI: MutagConfig["openAI"]) => Promise<OrganiseLibraryResult>;
       loadConfig: () => Promise<Partial<MutagConfig> | null>;
       saveConfig: (config: MutagConfig) => Promise<{ ok: true }>;
       saveProjectState: (root: string, state: MutagProjectState) => Promise<{ ok: true }>;

@@ -18,6 +18,11 @@ export interface AudioFile {
   tempTags: AudioTag | null;
 }
 
+export interface OrganiseLibraryResult {
+  moves: { originalPath: string; path: string; name: string }[];
+  messages: string[];
+}
+
 export type SaveTagsResult =
   | {
       ok: true;
