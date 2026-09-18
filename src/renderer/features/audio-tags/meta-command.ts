@@ -3,7 +3,6 @@ import type { ChatCommand, ChatCommandContext, ChatCommandOutcome } from "./chat
 
 const DEFAULT_BATCH_SIZE = 5;
 const DEFAULT_CONCURRENCY = 1;
-const REQUEST_TIMEOUT_MS = 60000;
 const PROTECTED_FIELDS = new Set(["title", "lyrics", "image"]);
 
 /** Complete missing metadata as pending edits using the project's default prompt. */
@@ -27,7 +26,7 @@ async function executeMeta(context: ChatCommandContext): Promise<ChatCommandOutc
         const response = await fetch(`${context.openAI.baseURL.replace(/\/$/, "")}/chat/completions`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${context.openAI.apiKey}` },
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          signal: AbortSignal.timeout(context.openAI.timeoutSeconds * 1000),
           body: JSON.stringify({
             model: context.openAI.model,
             messages: [
@@ -44,12 +43,20 @@ async function executeMeta(context: ChatCommandContext): Promise<ChatCommandOutc
         const content = completion?.choices?.[0]?.message?.content;
         const json = typeof content === "string" ? content.match(/\{[\s\S]*\}/)?.[0] : null;
         if (!json) throw new Error("未返回元数据 JSON");
-        const updates = JSON.parse(json);
+        let updates;
+        try {
+          updates = JSON.parse(json);
+        } catch {
+          throw new Error("模型返回的元数据不是有效 JSON，请检查提示词要求的返回格式");
+        }
         if (!updates || typeof updates !== "object" || Array.isArray(updates)) throw new Error("元数据格式无效");
         for (const file of batch) {
           const proposedTags = updates[file.id];
           if (proposedTags !== undefined && (!proposedTags || typeof proposedTags !== "object" || Array.isArray(proposedTags))) {
             throw new Error(`${file.name} 的元数据格式无效`);
+          }
+          for (const [key, value] of Object.entries(proposedTags ?? {})) {
+            if (typeof value !== "string") throw new Error(`${file.name} 的 ${key} 格式无效，应为字符串`);
           }
         }
         for (const file of batch) {

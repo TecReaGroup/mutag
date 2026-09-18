@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import imageDownloadPrompt from "../../data/prompt/image_download_prompt.md?raw";
+import { logEvent } from "./logging.js";
 
 const require = createRequire(import.meta.url);
 const { nativeImage } = require("electron");
@@ -10,7 +11,6 @@ const IMAGE_NAMES = ["artist.jpg", "cover.jpg"];
 const REQUEST_TIMEOUT_MS = 60000;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const JPEG_QUALITY = 90;
-const LOG_DIRECTORY = path.resolve("log");
 const ARTWORK_SEARCH_TIMEOUT_MS = 15000;
 
 /** Find published artwork instead of relying on URLs memorized by a model. */
@@ -85,14 +85,7 @@ async function exists(filePath) {
 
 /** Persist library operations in the project's daily UTC+8 log. */
 async function logLibraryEvent(level, message) {
-  const timestamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
-  const line = `[${timestamp.slice(0, 10)} ${timestamp.slice(11, 19)} +08:00] [${level}] [music-library] - ${message.replace(/[\r\n]+/g, " ")}\n`;
-  try {
-    await fs.mkdir(LOG_DIRECTORY, { recursive: true });
-    await fs.appendFile(path.join(LOG_DIRECTORY, `log_${timestamp.slice(0, 10)}.log`), line);
-  } catch {
-    console.warn(line.trim());
-  }
+  logEvent(level, "music-library", message);
 }
 
 /** Ask the configured model only for artwork that is missing on disk. */
@@ -102,13 +95,14 @@ async function requestArtworkLinks(artist, songs, missing, openAI) {
     throw new Error("请先配置 LLM 的 Base URL 和 Model");
   }
   const candidates = await searchArtworkCandidates(artist, songs, missing);
+  logEvent("INFO", "llm", `开始图片链接请求，模型=${openAI.model}，歌手=${artist}`);
   const response = await fetch(`${openAI.baseURL.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(openAI.apiKey ? { Authorization: `Bearer ${openAI.apiKey}` } : {}),
     },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout((openAI.timeoutSeconds ?? REQUEST_TIMEOUT_MS / 1000) * 1000),
     body: JSON.stringify({
       model: openAI.model,
       messages: [
@@ -118,13 +112,19 @@ async function requestArtworkLinks(artist, songs, missing, openAI) {
     }),
   });
   if (!response.ok) throw new Error(`LLM 请求失败：HTTP ${response.status}`);
+  logEvent("INFO", "llm", `图片链接请求响应 HTTP ${response.status}，模型=${openAI.model}`);
   const completion = await response.json();
   const content = completion?.choices?.[0]?.message?.content;
   const json = typeof content === "string"
     ? content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").match(/\{[\s\S]*\}/)?.[0]
     : null;
   if (!json) throw new Error("LLM 未返回图片链接对象");
-  const links = JSON.parse(json);
+  let links;
+  try {
+    links = JSON.parse(json);
+  } catch {
+    throw new Error("模型返回的图片链接不是有效 JSON，请检查提示词要求的返回格式");
+  }
   if (!links || typeof links !== "object" || Array.isArray(links)) throw new Error("LLM 返回格式无效");
   for (const filename of missing) {
     const url = links[filename];

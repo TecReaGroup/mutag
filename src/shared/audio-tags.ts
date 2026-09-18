@@ -36,6 +36,7 @@ export type SaveTagsResult =
     };
 
 export interface MutagConfig {
+  language?: "en" | "zh-CN";
   models?: MutagConfig["openAI"][];
   lastFolder: string;
   openAI: {
@@ -44,6 +45,7 @@ export interface MutagConfig {
     model: string;
     filesPerRequest: number;
     concurrency: number;
+    timeoutSeconds: number;
   };
   audioTag: {
     defaultFieldKeys: string[];

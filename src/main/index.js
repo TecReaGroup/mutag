@@ -3,12 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { organiseLibrary, downloadLibraryImages } from "./music-library.js";
+import { logEvent } from "./logging.js";
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { File, TagTypes, Id3v2FrameClassType, ByteVector, Picture, PictureType } = require("node-taglib-sharp");
 
 app.name = "mutag";
+logEvent("INFO", "app", `启动 mutag，PID=${process.pid}，工作目录=${process.cwd()}`);
+process.on("uncaughtExceptionMonitor", (error) => logEvent("ERROR", "app", error.stack ?? error.message));
 
 const AUDIO_EXTENSIONS = new Set([
   ".mp3",
@@ -45,6 +48,9 @@ function createWindow() {
   });
 
   mainWindow.setMenuBarVisibility(false);
+  mainWindow.webContents.on("did-finish-load", () => logEvent("INFO", "window", "界面加载完成"));
+  mainWindow.webContents.on("did-fail-load", (_event, code, description) => logEvent("ERROR", "window", `界面加载失败 ${code}：${description}`));
+  mainWindow.webContents.on("render-process-gone", (_event, details) => logEvent("ERROR", "window", `渲染进程退出：${details.reason}，退出码=${details.exitCode}`));
 
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -59,7 +65,7 @@ async function walkAudioFiles(dir, depth = 1) {
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch (error) {
-    console.warn(`Skipping unreadable directory: ${dir}`, error);
+    logEvent("WARN", "scan", `无法读取目录 ${dir}：${error.message}`);
     return [];
   }
 
@@ -85,7 +91,7 @@ async function readJsonFile(filePath, fallback) {
   try {
     return JSON.parse(await fs.readFile(filePath, "utf8"));
   } catch (error) {
-    if (error?.code !== "ENOENT") console.warn(`Failed to read JSON file: ${filePath}`, error);
+    if (error?.code !== "ENOENT") logEvent("WARN", "config", `无法读取 JSON ${filePath}：${error.message}`);
     return fallback;
   }
 }
@@ -99,6 +105,7 @@ function projectStatePath(root) {
 }
 
 async function scanFolder(root) {
+  logEvent("INFO", "scan", `开始扫描音乐目录：${root}`);
   const audioPaths = await walkAudioFiles(root);
   const projectState = await readJsonFile(projectStatePath(root), null);
   const files = [];
@@ -115,10 +122,11 @@ async function scanFolder(root) {
         tempTags: persisted?.tempTags ? { ...savedTags, ...persisted.tempTags } : null,
       });
     } catch (error) {
-      console.warn(`Skipping unreadable audio file: ${filePath}`, error);
+      logEvent("WARN", "scan", `无法读取音频 ${filePath}：${error.message}`);
     }
   }
 
+  logEvent("INFO", "scan", `扫描完成：${root}，发现 ${audioPaths.length} 个音频，加载 ${files.length} 个`);
   return { root, files, projectState };
 }
 
@@ -353,7 +361,7 @@ async function validateTitleBeforeSave(filePath, tags) {
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch (error) {
-    console.warn(`Failed to read directory for title validation: ${dir}`, error);
+    logEvent("WARN", "tags", `标题校验无法读取目录 ${dir}：${error.message}`);
     return;
   }
 
@@ -366,7 +374,7 @@ async function validateTitleBeforeSave(filePath, tags) {
     try {
       siblingTitle = readTags(siblingPath).title;
     } catch (error) {
-      console.warn(`Skipping unreadable audio file during title validation: ${siblingPath}`, error);
+      logEvent("WARN", "tags", `标题校验无法读取音频 ${siblingPath}：${error.message}`);
       continue;
     }
     if (normalizeTitleForCompare(siblingTitle) === title) {
@@ -513,7 +521,7 @@ async function writeTags(filePath, tags) {
   try {
     return { ok: true, tags: readTags(nextPath), path: nextPath, name: path.basename(nextPath) };
   } catch (error) {
-    console.warn(`Saved tags but failed to refresh metadata: ${nextPath}`, error);
+    logEvent("WARN", "tags", `标签已保存但刷新失败 ${nextPath}：${error.message}`);
     return { ok: true, tags: savedTags, path: nextPath, name: path.basename(nextPath) };
   }
 }
@@ -534,13 +542,15 @@ ipcMain.handle("audio-tags:open-last-folder", async (_event, root) => {
   try {
     return await scanFolder(root);
   } catch (error) {
-    console.warn(`Failed to reopen last folder: ${root}`, error);
+    logEvent("ERROR", "scan", `恢复目录失败 ${root}：${error.message}`);
     return null;
   }
 });
 
 ipcMain.handle("audio-tags:load-config", async () => {
-  return readJsonFile(CONFIG_PATH, null);
+  const config = await readJsonFile(CONFIG_PATH, null);
+  logEvent("INFO", "config", config ? `已加载配置，模型数量=${config.models?.length ?? (config.openAI ? 1 : 0)}` : "未找到可用配置，使用默认配置");
+  return config;
 });
 
 ipcMain.handle("audio-tags:organise", async (_event, payload) => {
@@ -565,6 +575,7 @@ ipcMain.handle("audio-tags:download-images", async (_event, payload) => {
 
 ipcMain.handle("audio-tags:save-config", async (_event, config) => {
   await writeJsonFile(CONFIG_PATH, config ?? {});
+  logEvent("INFO", "config", `配置已保存，模型数量=${config?.models?.length ?? 0}`);
   return { ok: true };
 });
 
@@ -581,8 +592,11 @@ ipcMain.handle("audio-tags:save-tags", async (_event, payload) => {
     if (!payload || typeof payload.path !== "string") {
       throw new Error("Missing audio file path.");
     }
-    return await writeTags(payload.path, payload.tags);
+    const saved = await writeTags(payload.path, payload.tags);
+    logEvent("INFO", "tags", `标签已保存：${payload.path}`);
+    return saved;
   } catch (error) {
+    logEvent("ERROR", "tags", `保存标签失败：${error.message}`);
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
@@ -627,12 +641,15 @@ ipcMain.handle("audio-tags:export-image", async (_event, payload) => {
 });
 
 app.whenReady().then(() => {
+  logEvent("INFO", "app", `Electron 已就绪，版本=${process.versions.electron}`);
   createWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+app.on("will-quit", () => logEvent("INFO", "app", "应用退出"));
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

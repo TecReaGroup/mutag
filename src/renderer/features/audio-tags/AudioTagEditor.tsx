@@ -285,8 +285,14 @@ const DEFAULT_OPENAI = {
   model: "gpt-4o-mini",
   filesPerRequest: 5,
   concurrency: 1,
+  timeoutSeconds: 60,
 };
 const DEFAULT_LEFT_W = 224;
+const CHINESE_TAG_LABELS: Record<string, string> = {
+  title: "歌名", artist: "歌手", album: "专辑", album_artist: "专辑歌手", genre: "流派",
+  year: "年份", track: "音轨", disc: "碟号", composer: "作曲", comment: "备注",
+  lyrics: "歌词", image: "封面", bpm: "节拍", copyright: "版权", publisher: "发行方",
+};
 const DEFAULT_RIGHT_W = 208;
 
 function clampPositiveInteger(value: number, fallback: number) {
@@ -324,7 +330,10 @@ export function AudioTagEditor() {
   const [rightW, setRightW] = useState(DEFAULT_RIGHT_W); // pending panel px
   const [showSettings, setShowSettings] = useState(false);
   const [defaultFieldKeys, setDefaultFieldKeys] = useState<string[]>(() => TAG_FIELDS.map((f) => f.key));
-  const [settingsCategory, setSettingsCategory] = useState<"audio-tag" | "openai">("audio-tag");
+  const [settingsCategory, setSettingsCategory] = useState<"audio-tag" | "openai" | "language">("audio-tag");
+  const [language, setLanguage] = useState<"en" | "zh-CN">("en");
+  const t = (english: string, chinese: string) => language === "zh-CN" ? chinese : english;
+  useEffect(() => { document.documentElement.lang = language; }, [language]);
   const dragFromRef = useRef<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [addingDefault, setAddingDefault] = useState(false);
@@ -358,8 +367,8 @@ export function AudioTagEditor() {
   const hasSelectedFile = selectedIndex >= 0;
   const selectedFile = files[selectedIndex] ?? {
     id: "",
-    name: "No audio files found",
-    path: "Open a folder with supported audio files to start editing.",
+    name: t("No audio files found", "未找到音频文件"),
+    path: t("Open a folder with supported audio files to start editing.", "打开包含音频文件的文件夹以开始编辑。"),
     savedTags: {} as AudioTag,
     tempTags: null,
   };
@@ -401,6 +410,7 @@ export function AudioTagEditor() {
 
     const config: MutagConfig = {
       lastFolder: projectRoot,
+      language,
       openAI,
       models,
       audioTag: { defaultFieldKeys },
@@ -410,7 +420,7 @@ export function AudioTagEditor() {
     configSaveTimerRef.current = setTimeout(() => {
       window.audioTagApi?.saveConfig(config).catch((err) => console.warn("Failed to save mutag config", err));
     }, 250);
-  }, [configLoaded, defaultFieldKeys, leftW, openAI, models, projectRoot, rightW]);
+  }, [configLoaded, defaultFieldKeys, leftW, openAI, models, projectRoot, rightW, language]);
 
   useEffect(() => {
     if (!configLoaded || !projectRoot || !window.audioTagApi || activeCommand) return;
@@ -470,17 +480,19 @@ export function AudioTagEditor() {
       try {
         const config = await window.audioTagApi?.loadConfig();
         if (cancelled) return;
+        setLanguage(config?.language === "zh-CN" ? "zh-CN" : "en");
         if (config?.openAI) {
           setOpenAI((prev) => ({
             ...prev,
             ...config.openAI,
             filesPerRequest: clampPositiveInteger(config.openAI.filesPerRequest, prev.filesPerRequest),
             concurrency: clampPositiveInteger(config.openAI.concurrency, prev.concurrency),
+            timeoutSeconds: clampPositiveInteger(config.openAI.timeoutSeconds, prev.timeoutSeconds),
           }));
-          setModelDraft({ ...DEFAULT_OPENAI, ...config.openAI });
+          setModelDraft({ ...DEFAULT_OPENAI, ...config.openAI, timeoutSeconds: clampPositiveInteger(config.openAI.timeoutSeconds, DEFAULT_OPENAI.timeoutSeconds) });
           const restoredModels = (Array.isArray(config.models) ? config.models : [config.openAI])
             .filter((entry, index, entries) => entry.model?.trim() && entries.findIndex((other) => other.model.trim() === entry.model.trim()) === index)
-            .map((entry) => ({ ...DEFAULT_OPENAI, ...entry, model: entry.model.trim() }));
+            .map((entry) => ({ ...DEFAULT_OPENAI, ...entry, model: entry.model.trim(), timeoutSeconds: clampPositiveInteger(entry.timeoutSeconds, DEFAULT_OPENAI.timeoutSeconds) }));
           setModels(restoredModels);
         }
         if (Array.isArray(config?.audioTag?.defaultFieldKeys)) {
@@ -733,7 +745,7 @@ export function AudioTagEditor() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${openAI.apiKey}`,
         },
-        signal: abortController.signal,
+        signal: AbortSignal.any([abortController.signal, AbortSignal.timeout(openAI.timeoutSeconds * 1000)]),
         body: JSON.stringify({
           model: openAI.model,
           messages: [systemMsg, contextMsg, ...chatMessages, userMsg],
@@ -806,8 +818,8 @@ export function AudioTagEditor() {
   const canClearChat = !chatSending && chatMessages.length > 0;
 
   const labelForKey = useCallback(
-    (key: string) => extraFields.find((f) => f.key === key)?.label ?? formatTagLabel(key),
-    [extraFields]
+    (key: string) => (language === "zh-CN" ? CHINESE_TAG_LABELS[key] : undefined) ?? extraFields.find((f) => f.key === key)?.label ?? formatTagLabel(key),
+    [extraFields, language]
   );
 
   const buildFieldsForFile = useCallback(
@@ -853,7 +865,7 @@ export function AudioTagEditor() {
   );
   const allFields = hasSelectedFile ? buildFieldsForFile(selectedFile) : [];
   const knownTagFields = Object.entries(TAG_LABELS)
-    .map(([key, label]) => ({ key: normalizeTagKey(key), label }))
+    .map(([key, label]) => ({ key: normalizeTagKey(key), label: language === "zh-CN" ? CHINESE_TAG_LABELS[key] ?? label : label }))
     .filter(({ key }, idx, arr) => arr.findIndex((f) => f.key === key) === idx);
   const availableAddFields = knownTagFields
     .filter(({ key }) => !allFields.some((f) => normalizeTagKey(f.key) === key));
@@ -868,9 +880,10 @@ export function AudioTagEditor() {
   };
 
   if (showSettings) {
-    const categories: { key: "audio-tag" | "openai"; label: string }[] = [
-      { key: "audio-tag", label: "Audio Tag" },
+    const categories: { key: "audio-tag" | "openai" | "language"; label: string }[] = [
+      { key: "audio-tag", label: t("Audio Tag", "音频标签") },
       { key: "openai", label: "LLM" },
+      { key: "language", label: t("Language", "语言") },
     ];
     const removeDefault = (k: string) =>
       setDefaultFieldKeys((prev) => prev.filter((x) => normalizeTagKey(x) !== k));
@@ -897,9 +910,9 @@ export function AudioTagEditor() {
             disabled={isFileOperationBusy}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[#656d76] hover:text-[#1f2328] hover:bg-[#f6f8fa] transition-colors"
           >
-            <ArrowLeft size={14} /> Back
+            <ArrowLeft size={14} /> {t("Back", "返回")}
           </button>
-          <span className="text-xs text-[#656d76] uppercase tracking-wider ml-2">Settings</span>
+          <span className="text-xs text-[#656d76] uppercase tracking-wider ml-2">{t("Settings", "设置")}</span>
         </div>
 
         <div className="flex-1 flex overflow-hidden">
@@ -926,12 +939,27 @@ export function AudioTagEditor() {
 
           {/* Right: content */}
           <div className="flex-1 overflow-y-auto p-6">
+            {settingsCategory === "language" && (
+              <div className="max-w-2xl space-y-3">
+                <h2 className="text-sm">{t("Language", "语言")}</h2>
+                <select
+                  aria-label={t("Language", "语言")}
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value as "en" | "zh-CN")}
+                  className="w-full h-9 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
+                >
+                  <option value="en">English</option>
+                  <option value="zh-CN">简体中文</option>
+                </select>
+                <p className="text-xs text-[#656d76]">{t("Changes apply immediately and are saved automatically.", "切换后立即生效并自动保存。")}</p>
+              </div>
+            )}
             {settingsCategory === "audio-tag" && (
               <div className="max-w-2xl space-y-4">
                 <div>
-                  <h2 className="text-sm text-[#1f2328]">Default Fields</h2>
+                  <h2 className="text-sm text-[#1f2328]">{t("Default Fields", "默认字段")}</h2>
                   <p className="text-xs text-[#656d76] mt-1">
-                    Default fields always appear in this order, even when empty. Other fields appear after them only while they have content; clearing an other field removes it on save.
+                    {t("Default fields always appear in this order, even when empty. Other fields appear after them only while they have content; clearing an other field removes it on save.", "默认字段始终按此顺序显示，即使为空。其他字段仅在有内容时显示，清空后将在保存时移除。")}
                   </p>
                 </div>
 
@@ -965,7 +993,7 @@ export function AudioTagEditor() {
                         <span className="text-sm text-[#1f2328] flex-1">{labelOf(key)}</span>
                         <button
                           onClick={() => { if (!isFileOperationBusy) removeDefault(key); }}
-                          title="Remove from defaults"
+                          title={t("Remove from defaults", "从默认字段移除")}
                           className="opacity-0 group-hover:opacity-100 text-[#656d76] hover:text-[#cf222e] transition-opacity"
                         >
                           <Trash2 size={14} />
@@ -978,18 +1006,18 @@ export function AudioTagEditor() {
                     {addingDefault && (
                       <div className="absolute bottom-full left-0 right-0 mb-2 rounded border border-[#d0d7de] bg-white shadow-lg overflow-hidden z-10">
                         <div className="h-8 px-3 flex items-center justify-between border-b border-[#d0d7de] bg-[#f6f8fa]">
-                          <span className="text-[10px] text-[#656d76] uppercase tracking-wider">Choose default field</span>
+                          <span className="text-[10px] text-[#656d76] uppercase tracking-wider">{t("Choose default field", "选择默认字段")}</span>
                           <button
                             onClick={() => { if (!isFileOperationBusy) setAddingDefault(false); }}
                             className="h-6 w-6 flex items-center justify-center text-[#656d76] hover:text-[#1f2328] transition-colors"
-                            title="Close"
+                            title={t("Close", "关闭")}
                           >
                             <X size={13} />
                           </button>
                         </div>
                         <div className="max-h-56 overflow-y-auto thin-scrollbar py-1">
                           {availableDefaultFields.length === 0 ? (
-                            <div className="px-3 py-2 text-xs text-[#8c959f] italic">No available fields</div>
+                            <div className="px-3 py-2 text-xs text-[#8c959f] italic">{t("No available fields", "没有可用字段")}</div>
                           ) : (
                             availableDefaultFields.map(({ key, label }) => (
                               <button
@@ -1013,7 +1041,7 @@ export function AudioTagEditor() {
                           : "border-[#d0d7de] text-[#656d76] hover:text-[#0969da] hover:border-[#0969da]"
                       }`}
                     >
-                      <Plus size={13} /> Add default field
+                      <Plus size={13} /> {t("Add default field", "添加默认字段")}
                     </button>
                   </div>
                 </div>
@@ -1023,9 +1051,9 @@ export function AudioTagEditor() {
             {settingsCategory === "openai" && (
               <div className="max-w-2xl space-y-4">
                 <div>
-                  <h2 className="text-sm text-[#1f2328]">OpenAI-compatible API</h2>
+                  <h2 className="text-sm text-[#1f2328]">{t("OpenAI-compatible API", "兼容 OpenAI 的接口")}</h2>
                   <p className="text-xs text-[#656d76] mt-1">
-                    Used for conversations and commands. Any OpenAI-compatible endpoint works.
+                    {t("Used for conversations and commands. Any OpenAI-compatible endpoint works.", "用于对话和命令，支持兼容 OpenAI 的接口。")}
                   </p>
                 </div>
                 {[...models, ...(editingModel === "" ? [{ ...DEFAULT_OPENAI, model: "" }] : [])].map((profile) => (
@@ -1040,13 +1068,13 @@ export function AudioTagEditor() {
                         setModelError("");
                       }}
                     >
-                      <span className="min-w-0 break-all">{profile.model || "新模型"}{profile.model && profile.model === openAI.model ? " · 当前模型" : ""}</span>
+                      <span className="min-w-0 break-all">{profile.model || t("New model", "新模型")}{profile.model && profile.model === openAI.model ? t(" · Active", " · 当前模型") : ""}</span>
                       <ChevronRight size={16} className={`shrink-0 text-[#656d76] transition-transform ${editingModel === profile.model ? "rotate-90" : ""}`} />
                     </button>
                   </div>
                 {editingModel === profile.model && <div className="border-t border-[#d0d7de] p-4 space-y-3">
                   <label className="block">
-                    <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">Model</div>
+                    <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">{t("Model", "模型")}</div>
                     <input
                       autoFocus
                       value={modelDraft.model}
@@ -1056,7 +1084,7 @@ export function AudioTagEditor() {
                     />
                   </label>
                   <label className="block">
-                    <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">Base URL</div>
+                    <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">{t("Base URL", "接口地址")}</div>
                     <input
                       value={modelDraft.baseURL}
                       onChange={(e) => setModelDraft((s) => ({ ...s, baseURL: e.target.value }))}
@@ -1065,7 +1093,7 @@ export function AudioTagEditor() {
                     />
                   </label>
                   <label className="block">
-                    <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">API Key</div>
+                    <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">{t("API Key", "API 密钥")}</div>
                     <input
                       type="password"
                       value={modelDraft.apiKey}
@@ -1076,7 +1104,7 @@ export function AudioTagEditor() {
                   </label>
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block">
-                      <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">Files per request</div>
+                      <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">{t("Files per request", "每批文件数")}</div>
                       <input
                         type="number"
                         min={1}
@@ -1087,7 +1115,7 @@ export function AudioTagEditor() {
                       />
                     </label>
                     <label className="block">
-                      <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">Concurrency</div>
+                      <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-1">{t("Concurrency", "并发数")}</div>
                       <input
                         type="number"
                         min={1}
@@ -1099,15 +1127,27 @@ export function AudioTagEditor() {
                     </label>
                   </div>
                   <p className="text-xs text-[#656d76]">
-                    /meta completes metadata in batches using these limits. Normal conversations use a single request.
+                    {t("/meta completes metadata in batches using these limits. Normal conversations use a single request.", "/meta 使用这些限制分批补齐元数据，普通对话使用单次请求。")}
                   </p>
+                  <label className="block">
+                    <div className="text-[10px] text-[#8c959f] tracking-wider mb-1">{t("Maximum wait (seconds)", "最多等待秒数")}</div>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={modelDraft.timeoutSeconds}
+                      onChange={(e) => setModelDraft((s) => ({ ...s, timeoutSeconds: clampPositiveInteger(e.target.valueAsNumber, DEFAULT_OPENAI.timeoutSeconds) }))}
+                      className="w-full h-8 px-2 text-sm bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da]"
+                    />
+                    <p className="text-xs text-[#656d76] mt-1">{t("Timeout per LLM request, 60 seconds by default. Metadata batches are timed separately.", "单次 LLM 请求的等待上限，默认 60 秒；元数据补齐按每批请求计时。")}</p>
+                  </label>
                   {modelError && <p role="alert" className="text-xs text-[#cf222e]">{modelError}</p>}
                   <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => {
                       const model = modelDraft.model.trim();
-                      if (!model || !modelDraft.baseURL.trim()) { setModelError("Base URL 和 Model 不能为空。"); return; }
-                      if (models.some((entry) => entry.model === model && entry.model !== profile.model)) { setModelError("Model 已存在，不能重复。"); return; }
+                      if (!model || !modelDraft.baseURL.trim()) { setModelError(t("Base URL and Model are required.", "Base URL 和 Model 不能为空。")); return; }
+                      if (models.some((entry) => entry.model === model && entry.model !== profile.model)) { setModelError(t("Model already exists.", "Model 已存在，不能重复。")); return; }
                       const updated = { ...modelDraft, model, baseURL: modelDraft.baseURL.trim() };
                       setModels((entries) => profile.model
                         ? entries.map((entry) => entry.model === profile.model ? updated : entry)
@@ -1117,9 +1157,9 @@ export function AudioTagEditor() {
                       setEditingModel(null);
                     }}
                     className="px-4 py-2 text-xs rounded bg-[#0969da] text-white hover:bg-[#0860c4]"
-                  >保存</button>
+                  >{t("Save", "保存")}</button>
                   <button
-                    aria-label={`删除 ${profile.model || "新模型"}`}
+                    aria-label={`${t("Delete", "删除")} ${profile.model || t("New model", "新模型")}`}
                     className="px-4 py-2 text-xs rounded border border-[#cf222e] text-[#cf222e] hover:bg-[#ffebe9]"
                     onClick={() => {
                       const remaining = models.filter((entry) => entry.model !== profile.model);
@@ -1128,7 +1168,7 @@ export function AudioTagEditor() {
                       setEditingModel(null);
                       setModelError("");
                     }}
-                  >删除</button>
+                  >{t("Delete", "删除")}</button>
                   </div>
                 </div>}
                 </div>
@@ -1137,7 +1177,7 @@ export function AudioTagEditor() {
                   disabled={editingModel === ""}
                   onClick={() => { setEditingModel(""); setModelDraft({ ...DEFAULT_OPENAI, model: "", apiKey: "" }); setModelError(""); }}
                   className="flex items-center justify-center gap-1 w-full px-3 py-2 text-xs rounded border border-dashed border-[#d0d7de] text-[#0969da] hover:bg-[#ddf4ff] disabled:opacity-40"
-                ><Plus size={13} /> Add</button>
+                ><Plus size={13} /> {t("Add", "添加")}</button>
               </div>
             )}
           </div>
@@ -1153,11 +1193,11 @@ export function AudioTagEditor() {
       <div className="flex-shrink-0 border-r-0 bg-white flex flex-col" style={{ width: leftW }}>
         {/* Row 1 — aligns with middle's filename top bar */}
         <div className={`${HEADER_H} px-4 flex items-center gap-2 border-b border-[#d0d7de] flex-shrink-0`}>
-          <span className="text-xs text-[#656d76] uppercase tracking-wider">Audio Files</span>
+          <span className="text-xs text-[#656d76] uppercase tracking-wider">{t("Audio Files", "音频文件")}</span>
           <button
             onClick={handleOpenFolder}
             disabled={isScanning || isFileOperationBusy}
-            title="Open folder"
+            title={t("Open folder", "打开文件夹")}
             className="ml-auto flex items-center justify-center w-6 h-6 rounded text-[#656d76] hover:text-[#1f2328] hover:bg-[#f6f8fa] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
           >
             <FolderOpen size={14} />
@@ -1166,13 +1206,13 @@ export function AudioTagEditor() {
         {/* Row 2 — aligns with middle's Original/Modified column header row */}
         <div className={`${HEADER_H} px-4 flex items-center gap-2 border-b border-[#d0d7de] flex-shrink-0 bg-[#f6f8fa]`}>
           <span className="text-[10px] text-[#8c959f] uppercase tracking-wider flex-shrink-0">
-            {isScanning ? "scanning..." : `${visibleFiles.length}${fileSearch.trim() ? `/${files.length}` : ""} items`}
+            {isScanning ? t("scanning...", "扫描中…") : `${visibleFiles.length}${fileSearch.trim() ? `/${files.length}` : ""} ${t("items", "项")}`}
           </span>
           <input
             value={fileSearch}
             onChange={(e) => setFileSearch(e.target.value)}
             disabled={isScanning || isFileOperationBusy}
-            placeholder="Search"
+            placeholder={t("Search", "搜索")}
             className="ml-auto min-w-0 flex-1 h-6 px-2 text-[11px] bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da] disabled:bg-[#f6f8fa] disabled:cursor-not-allowed"
           />
         </div>
@@ -1229,7 +1269,7 @@ export function AudioTagEditor() {
       <button
         onClick={() => { if (!isFileOperationBusy) setShowSettings(true); }}
         disabled={isFileOperationBusy}
-        title="Settings"
+        title={t("Settings", "设置")}
         className="fixed bottom-3 left-3 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-white border border-[#d0d7de] text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
       >
         <Settings size={14} />
@@ -1244,13 +1284,13 @@ export function AudioTagEditor() {
             <div className="flex items-start gap-3 px-3 py-2">
               <div className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-[#cf222e]" />
               <div className="min-w-0 flex-1">
-                <div className="text-xs font-bold text-[#82071e]">Save failed</div>
+                <div className="text-xs font-bold text-[#82071e]">{t("Save failed", "保存失败")}</div>
                 <div className="mt-0.5 text-xs text-[#82071e] break-words">{saveError}</div>
               </div>
               <button
                 onClick={() => setSaveError(null)}
                 className="h-6 w-6 flex-shrink-0 flex items-center justify-center rounded text-[#82071e] hover:bg-[#ffd7d5] transition-colors"
-                title="Close"
+                title={t("Close", "关闭")}
               >
                 <X size={13} />
               </button>
@@ -1290,10 +1330,10 @@ export function AudioTagEditor() {
         {/* Column headers — same HEADER_H as Files panel */}
         <div className={`${HEADER_H} flex border-b border-[#d0d7de] flex-shrink-0 bg-[#f6f8fa]`}>
           <div className="flex-1 flex items-center px-4 border-r border-[#d0d7de]">
-            <span className="text-xs text-[#656d76] uppercase tracking-wider">Original</span>
+            <span className="text-xs text-[#656d76] uppercase tracking-wider">{t("Original", "原始值")}</span>
           </div>
           <div className="flex-1 flex items-center justify-between px-4">
-            <span className="text-xs text-[#656d76] uppercase tracking-wider">Modified</span>
+            <span className="text-xs text-[#656d76] uppercase tracking-wider">{t("Modified", "修改值")}</span>
             <div className="flex items-center gap-3 text-[10px]">
               <span className="text-[#9a6700]">■ M</span>
               <span className="text-[#1a7f37]">■ A</span>
@@ -1332,7 +1372,7 @@ export function AudioTagEditor() {
                         <button
                           onClick={exportImage}
                           disabled={isFileOperationBusy || !origVal}
-                          title="Export image"
+                          title={t("Export image", "导出图片")}
                           className="ml-auto h-5 w-5 flex items-center justify-center rounded text-[#656d76] hover:text-[#0969da] hover:bg-[#ddf4ff] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           <Download size={12} />
@@ -1343,7 +1383,7 @@ export function AudioTagEditor() {
                       {isImageField ? (
                         <CoverPreview image={origVal} muted />
                       ) : (
-                        origVal || <span className="text-[#afb8c1] italic">empty</span>
+                        origVal || <span className="text-[#afb8c1] italic">{t("empty", "空")}</span>
                       )}
                     </div>
                   </div>
@@ -1364,7 +1404,7 @@ export function AudioTagEditor() {
                         <button
                           onClick={importImage}
                           disabled={isFileOperationBusy}
-                          title="Import image"
+                          title={t("Import image", "导入图片")}
                           className="ml-auto h-5 w-5 flex items-center justify-center rounded text-[#656d76] hover:text-[#0969da] hover:bg-[#ddf4ff] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           <Upload size={12} />
@@ -1382,7 +1422,7 @@ export function AudioTagEditor() {
                               {status !== "unchanged" && (
                                 <button
                                   onClick={() => updateTempField(key, origVal)}
-                                  title="Revert field"
+                                  title={t("Revert field", "还原字段")}
                                   className="h-full w-8 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
                                 >
                                   <Undo2 size={14} />
@@ -1390,7 +1430,7 @@ export function AudioTagEditor() {
                               )}
                               <button
                                 onClick={() => deleteField(key)}
-                                title="Clear image"
+                                title={t("Clear image", "清除图片")}
                                 className="h-full px-2 opacity-50 hover:opacity-100 hover:text-[#cf222e] transition-opacity"
                               >
                                 <Trash2 size={14} />
@@ -1405,7 +1445,7 @@ export function AudioTagEditor() {
                             onChange={(v) => updateTempField(key, v)}
                             onFocus={() => setFocusedField(key)}
                             onBlur={() => setTimeout(() => setFocusedField((f) => f === key ? null : f), 150)}
-                            placeholder="empty"
+                            placeholder={t("empty", "空")}
                             className="flex-1 min-h-[36px] w-full"
                             disabled={isFileOperationBusy}
                           />
@@ -1415,7 +1455,7 @@ export function AudioTagEditor() {
                                 <button
                                   onMouseDown={(e) => e.preventDefault()}
                                   onClick={() => updateTempField(key, origVal)}
-                                  title="Revert field"
+                                  title={t("Revert field", "还原字段")}
                                   className="h-full w-8 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
                                 >
                                   <Undo2 size={14} />
@@ -1424,7 +1464,7 @@ export function AudioTagEditor() {
                               <button
                                 onMouseDown={(e) => e.preventDefault()}
                                 onClick={() => deleteField(key)}
-                                title="Clear field"
+                                title={t("Clear field", "清空字段")}
                                 className="h-full px-2 opacity-50 hover:opacity-100 hover:text-[#cf222e] transition-opacity"
                               >
                                 <Trash2 size={14} />
@@ -1445,18 +1485,18 @@ export function AudioTagEditor() {
               {isAdding && (
                 <div className="absolute bottom-full left-0 right-0 mb-2 rounded border border-[#d0d7de] bg-white shadow-lg overflow-hidden z-10">
                   <div className="h-8 px-3 flex items-center justify-between border-b border-[#d0d7de] bg-[#f6f8fa]">
-                    <span className="text-[10px] text-[#656d76] uppercase tracking-wider">Choose field</span>
+                    <span className="text-[10px] text-[#656d76] uppercase tracking-wider">{t("Choose field", "选择字段")}</span>
                     <button
                       onClick={() => setIsAdding(false)}
                       className="h-6 w-6 flex items-center justify-center text-[#656d76] hover:text-[#1f2328] transition-colors"
-                      title="Close"
+                      title={t("Close", "关闭")}
                     >
                       <X size={13} />
                     </button>
                   </div>
                   <div className="max-h-56 overflow-y-auto thin-scrollbar py-1">
                     {availableAddFields.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-[#8c959f] italic">No available fields</div>
+                      <div className="px-3 py-2 text-xs text-[#8c959f] italic">{t("No available fields", "没有可用字段")}</div>
                     ) : (
                       availableAddFields.map(({ key, label }) => (
                         <button
@@ -1480,15 +1520,15 @@ export function AudioTagEditor() {
                     : "border-[#d0d7de] text-[#656d76] hover:text-[#0969da] hover:border-[#0969da] hover:bg-[#ddf4ff]"
                 }`}
               >
-                <Plus size={14} /> Add field
+                <Plus size={14} /> {t("Add field", "添加字段")}
               </button>
             </div>
           </div>
           ) : (
             <div className="h-full flex items-center justify-center p-6 text-center">
               <div>
-                <div className="text-sm text-[#656d76]">No audio files found</div>
-                <div className="mt-1 text-xs text-[#8c959f]">Choose another folder or add supported audio files within 5 folder levels.</div>
+                <div className="text-sm text-[#656d76]">{t("No audio files found", "未找到音频文件")}</div>
+                <div className="mt-1 text-xs text-[#8c959f]">{t("Choose another folder or add supported audio files within 5 folder levels.", "请选择其他文件夹，或在 5 层目录范围内添加支持的音频文件。")}</div>
               </div>
             </div>
           )}
@@ -1502,7 +1542,7 @@ export function AudioTagEditor() {
               disabled={isScanning || isFileOperationBusy || !hasSelectedFile || selectedIndex === 0}
               className="flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              <ChevronLeft size={13} /> Prev
+              <ChevronLeft size={13} /> {t("Prev", "上一个")}
             </button>
           </div>
           <div className="justify-self-center">
@@ -1511,7 +1551,7 @@ export function AudioTagEditor() {
               disabled={isScanning || isFileOperationBusy || !hasAnyChange}
               className="flex items-center gap-1.5 px-4 py-1.5 text-xs rounded border border-[#1a7f37] bg-[#1f883d] text-white hover:bg-[#1a7f37] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              <Save size={13} /> Save
+              <Save size={13} /> {t("Save", "保存")}
             </button>
           </div>
           <div className="justify-self-end">
@@ -1520,7 +1560,7 @@ export function AudioTagEditor() {
               disabled={isScanning || isFileOperationBusy || !hasSelectedFile || selectedIndex === files.length - 1}
               className="flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-[#d0d7de] bg-white text-[#656d76] hover:text-[#1f2328] hover:border-[#8c959f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              Next <ChevronRight size={13} />
+              {t("Next", "下一个")} <ChevronRight size={13} />
             </button>
           </div>
         </div>
@@ -1543,7 +1583,7 @@ export function AudioTagEditor() {
                   : "text-[#656d76] hover:text-[#1f2328]"
               }`}
             >
-              {t}
+              {language === "zh-CN" ? (t === "pending" ? "待保存" : "对话") : t}
             </button>
           ))}
         </div>
@@ -1551,7 +1591,7 @@ export function AudioTagEditor() {
         {rightTab === "pending" ? (
           <>
             <div className={`${HEADER_H} px-4 flex items-center border-b border-[#d0d7de] flex-shrink-0 bg-[#f6f8fa]`}>
-              <span className="text-[10px] text-[#8c959f] uppercase tracking-wider">{dirtyFiles.length} changed</span>
+              <span className="text-[10px] text-[#8c959f] uppercase tracking-wider">{dirtyFiles.length} {t("changed", "个已修改")}</span>
             </div>
             <div className="flex-1 overflow-y-auto thin-scrollbar py-1">
               {isScanning ? (
@@ -1564,7 +1604,7 @@ export function AudioTagEditor() {
                   ))}
                 </div>
               ) : dirtyFiles.length === 0 && (
-                <div className="px-4 py-3 text-[10px] text-[#8c959f] italic">No pending changes</div>
+                <div className="px-4 py-3 text-[10px] text-[#8c959f] italic">{t("No pending changes", "没有待保存的修改")}</div>
               )}
               {!isScanning && dirtyFiles.map((f) => {
                 const changes = buildFieldsForFile(f).filter(({ key }) => {
@@ -1604,26 +1644,26 @@ export function AudioTagEditor() {
                 disabled={dirtyFiles.length === 0 || isFileOperationBusy}
                 className="flex-1 px-2 py-1.5 text-xs rounded bg-[#1f883d] text-white hover:bg-[#1a7f37] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                {acceptAllProgress ? `Saving ${acceptAllProgress.done}/${acceptAllProgress.total}` : "Accept all"}
+                {acceptAllProgress ? `${t("Saving", "保存中")} ${acceptAllProgress.done}/${acceptAllProgress.total}` : t("Accept all", "全部保存")}
               </button>
               <button
                 onClick={discardAll}
                 disabled={dirtyFiles.length === 0 || isFileOperationBusy}
                 className="flex-1 px-2 py-1.5 text-xs rounded border border-[#d0d7de] text-[#656d76] hover:text-[#cf222e] hover:border-[#cf222e] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#656d76] disabled:hover:border-[#d0d7de] transition-colors bg-white"
               >
-                Discard all
+                {t("Discard all", "全部放弃")}
               </button>
             </div>
           </>
         ) : (
           <>
             <div className={`${HEADER_H} px-4 flex items-center border-b border-[#d0d7de] flex-shrink-0 bg-[#f6f8fa]`}>
-              <span className="text-[10px] text-[#8c959f] uppercase tracking-wider">{files.length} files · {clampPositiveInteger(openAI.filesPerRequest, DEFAULT_OPENAI.filesPerRequest)}/request · {clampPositiveInteger(openAI.concurrency, DEFAULT_OPENAI.concurrency)} concurrent</span>
+              <span className="text-[10px] text-[#8c959f] uppercase tracking-wider">{files.length} {t("files", "个文件")} · {clampPositiveInteger(openAI.filesPerRequest, DEFAULT_OPENAI.filesPerRequest)}/{t("request", "批")} · {clampPositiveInteger(openAI.concurrency, DEFAULT_OPENAI.concurrency)} {t("concurrent", "并发")}</span>
             </div>
             <div className="flex-1 overflow-y-auto thin-scrollbar p-3 space-y-2">
               {chatMessages.length === 0 && (
                 <div className="text-[10px] text-[#8c959f] italic">
-                  Chat normally, or send /meta to complete metadata, /organise to organise files, and /image to download artwork.
+                  {t("Chat normally, or send /meta to complete metadata, /organise to organise files, and /image to download artwork.", "可以直接对话，或发送 /meta 补齐元数据、/organise 整理文件、/image 下载图片。")}
                 </div>
               )}
               {chatMessages.map((m, i) => (
@@ -1635,12 +1675,12 @@ export function AudioTagEditor() {
                       : "bg-[#f6f8fa] text-[#1f2328] border border-[#d0d7de]"
                   }`}
                 >
-                  <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-0.5">{m.role}</div>
+                  <div className="text-[10px] text-[#8c959f] uppercase tracking-wider mb-0.5">{t(m.role, m.role === "user" ? "用户" : m.role === "assistant" ? "助手" : "系统")}</div>
                   {m.content}
                 </div>
               ))}
               {chatSending && (
-                <div className="text-[10px] text-[#8c959f] italic">{activeCommand?.progressMessage ?? "Sending…"}</div>
+                <div className="text-[10px] text-[#8c959f] italic">{activeCommand ? t("Running command…", activeCommand.progressMessage) : t("Sending…", "发送中…")}</div>
               )}
             </div>
             <div className="border-t border-[#d0d7de] p-2 flex-shrink-0 space-y-1.5">
@@ -1650,11 +1690,11 @@ export function AudioTagEditor() {
               <div className="flex items-center gap-2">
                 {isFileOperationBusy ? (
                   <div className="min-w-0 flex-1 text-[10px] leading-4 text-[#9a6700] px-1 whitespace-normal break-words">
-                    {activeCommand?.progressMessage ?? "Saving pending changes one by one. Other actions are disabled."}
+                    {activeCommand ? t("Running command…", activeCommand.progressMessage) : t("Saving pending changes one by one. Other actions are disabled.", "正在逐个保存修改，其他操作暂不可用。")}
                   </div>
                 ) : dirtyFiles.length > 0 && (
                   <div className="min-w-0 flex-1 text-[10px] leading-4 text-[#9a6700] px-1 whitespace-normal break-words">
-                    Save or discard pending changes before running commands. You can still chat.
+                    {t("Save or discard pending changes before running commands. You can still chat.", "运行命令前请保存或放弃待确认修改，仍可继续对话。")}
                   </div>
                 )}
                 <button
@@ -1669,7 +1709,7 @@ export function AudioTagEditor() {
                       : "border-[#d0d7de] text-[#656d76] hover:text-[#cf222e] hover:border-[#cf222e] disabled:hover:text-[#656d76] disabled:hover:border-[#d0d7de]"
                   }`}
                 >
-                  {chatSending ? "Stop" : "Clear"}
+                  {chatSending ? t("Stop", "停止") : t("Clear", "清空")}
                 </button>
               </div>
               <div className="flex flex-wrap gap-1">
@@ -1678,7 +1718,7 @@ export function AudioTagEditor() {
                     key={command.name}
                     onClick={() => { setChatInput(command.name); chatInputRef.current?.focus(); }}
                     disabled={dirtyFiles.length > 0 || chatSending || isFileOperationBusy || isScanning}
-                    title={command.description}
+                    title={t(command.name === "/meta" ? "Complete missing metadata" : command.name === "/image" ? "Download missing artwork" : "Organise audio files", command.description)}
                     className="px-2 py-1 text-[10px] rounded border border-[#d0d7de] text-[#0969da] hover:bg-[#ddf4ff] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {command.name}
@@ -1697,7 +1737,7 @@ export function AudioTagEditor() {
                   }
                 }}
                 disabled={chatSending || isFileOperationBusy || isScanning}
-                placeholder={activeCommand?.progressMessage ?? (isFileOperationBusy ? "Saving changes..." : "Send a message or choose a /command…")}
+                placeholder={activeCommand ? t("Running command…", activeCommand.progressMessage) : (isFileOperationBusy ? t("Saving changes...", "正在保存修改…") : t("Send a message or choose a /command…", "输入消息或选择 /命令…"))}
                 rows={5}
                 className="block w-full px-2 pt-1.5 pb-10 text-xs bg-white border border-[#d0d7de] rounded outline-none focus:border-[#0969da] resize-none disabled:bg-[#f6f8fa] disabled:cursor-not-allowed"
               />
@@ -1715,14 +1755,14 @@ export function AudioTagEditor() {
               >
                 <button
                   type="button"
-                  aria-label="选择模型"
+                  aria-label={t("Select model", "选择模型")}
                   aria-expanded={modelMenuOpen && !chatSending && !isFileOperationBusy}
                   aria-controls="chat-model-menu"
                   disabled={chatSending || isFileOperationBusy || !models.length}
                   onClick={() => setModelMenuOpen((open) => !open)}
                   className="flex items-center gap-2 max-w-full rounded border border-[#d0d7de] bg-white px-2 py-1 text-xs text-[#656d76] outline-none focus:border-[#0969da] disabled:opacity-40"
                 >
-                  <span className="truncate">{openAI.model || "请在 LLM 设置中添加模型"}</span>
+                  <span className="truncate">{openAI.model || t("Add a model in LLM settings", "请在 LLM 设置中添加模型")}</span>
                   <ChevronRight size={12} className={`shrink-0 transition-transform ${modelMenuOpen ? "-rotate-90" : ""}`} />
                 </button>
                 {modelMenuOpen && !chatSending && !isFileOperationBusy && (
@@ -1749,7 +1789,7 @@ export function AudioTagEditor() {
                 disabled={chatSending || isFileOperationBusy || isScanning || !chatInput.trim()}
                 className="w-full px-2 py-1.5 text-xs rounded bg-[#0969da] text-white hover:bg-[#0860c4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                {activeCommand ? `${activeCommand.name}…` : chatSending ? "Sending…" : "Send"}
+                  {activeCommand ? `${activeCommand.name}…` : chatSending ? t("Sending…", "发送中…") : t("Send", "发送")}
               </button>
             </div>
           </>
