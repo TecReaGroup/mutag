@@ -19,8 +19,8 @@ The application performs live Wikipedia and Apple Music lookups and supplies `ca
 
 ## Output contract
 
-Return only one valid JSON object. Do not wrap it in Markdown fences and do not add explanations. Include every requested filename as a key, even when its value is `null`.
+Input contains a `requests` array, one entry per artist. Return one JSON object keyed by the exact supplied artist names. Each artist's value is an object keyed by that entry's requested filenames, with URL strings or null values. Include every artist and requested filename. Do not wrap the response in Markdown fences or add explanations.
 
 Example:
 
-{"artist.jpg":"https://example.com/artist.jpg","cover.jpg":null}
+{"Artist Name":{"artist.jpg":"https://example.com/artist.jpg","cover.jpg":null}}

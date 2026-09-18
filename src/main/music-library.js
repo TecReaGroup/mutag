@@ -89,13 +89,17 @@ async function logLibraryEvent(level, message) {
 }
 
 /** Ask the configured model only for artwork that is missing on disk. */
-async function requestArtworkLinks(artist, songs, missing, openAI) {
+async function requestArtworkLinks(batch, openAI) {
   if (!openAI || typeof openAI.baseURL !== "string" || !openAI.baseURL.trim()
     || typeof openAI.model !== "string" || !openAI.model.trim()) {
     throw new Error("请先配置 LLM 的 Base URL 和 Model");
   }
-  const candidates = await searchArtworkCandidates(artist, songs, missing);
-  logEvent("INFO", "llm", `开始图片链接请求，模型=${openAI.model}，歌手=${artist}`);
+  const requests = [];
+  for (const { artist, songs, missing } of batch) {
+    const candidates = await searchArtworkCandidates(artist, songs, missing);
+    requests.push({ artist, songs, missing, candidates });
+  }
+  logEvent("INFO", "llm", `开始图片链接请求，模型=${openAI.model}，歌手数量=${batch.length}，等待上限=${openAI.timeoutSeconds}秒`);
   const response = await fetch(`${openAI.baseURL.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
@@ -107,7 +111,7 @@ async function requestArtworkLinks(artist, songs, missing, openAI) {
       model: openAI.model,
       messages: [
         { role: "system", content: imageDownloadPrompt },
-        { role: "user", content: JSON.stringify({ artist, songs, missing, candidates }) },
+        { role: "user", content: JSON.stringify({ requests }) },
       ],
     }),
   });
@@ -126,12 +130,15 @@ async function requestArtworkLinks(artist, songs, missing, openAI) {
     throw new Error("模型返回的图片链接不是有效 JSON，请检查提示词要求的返回格式");
   }
   if (!links || typeof links !== "object" || Array.isArray(links)) throw new Error("LLM 返回格式无效");
-  for (const filename of missing) {
-    const url = links[filename];
+  for (const { artist, missing, candidates } of requests) {
+    if (!links[artist] || typeof links[artist] !== "object" || Array.isArray(links[artist])) throw new Error(`LLM 未返回 ${artist} 的图片链接对象`);
+    for (const filename of missing) {
+    const url = links[artist][filename];
     if (url !== null && (typeof url !== "string" || !/^https?:\/\//i.test(url.trim()))) {
       throw new Error(`LLM 返回的 ${filename} 必须是 HTTP 图片链接或 null`);
     }
     if (url === null) await logLibraryEvent("WARN", `${artist}/${filename}：模型未选出匹配图片，检索候选 ${candidates.filter((candidate) => candidate.filename === filename).length} 个`);
+    }
   }
   return links;
 }
@@ -162,6 +169,31 @@ async function downloadArtwork(url, destination) {
     throw error;
   }
   await output.close();
+}
+
+/** Remove empty descendants bottom-up without following directory links. */
+async function removeEmptyDirectories(root, messages) {
+  let removed = 0;
+  async function visit(directory) {
+    try {
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.isSymbolicLink()) await visit(path.join(directory, entry.name));
+      }
+      if (directory === root) return;
+      // rmdir refuses nonempty directories, including files created during cleanup.
+      await fs.rmdir(directory);
+      removed += 1;
+      await logLibraryEvent("INFO", `删除空文件夹 ${directory}`);
+    } catch (error) {
+      if (["ENOTEMPTY", "EEXIST", "ENOENT"].includes(error.code)) return;
+      const warning = `空文件夹清理失败 ${directory}：${error.message}`;
+      messages.push(warning);
+      await logLibraryEvent("WARN", warning);
+    }
+  }
+  await visit(root);
+  return removed;
 }
 
 /** Organise scanned audio files and reconcile persisted paths. */
@@ -223,7 +255,8 @@ export async function organiseLibrary(root, files, projectState) {
     }
   }
 
-  const summary = `整理完成：移动 ${moves.length} 个文件，${unchanged} 个已在正确位置，跳过 ${skipped} 个。`;
+  const removedDirectories = await removeEmptyDirectories(realRoot, messages);
+  const summary = `整理完成：移动 ${moves.length} 个文件，${unchanged} 个已在正确位置，跳过 ${skipped} 个，清理 ${removedDirectories} 个空文件夹。`;
   for (const message of messages) await logLibraryEvent("INFO", message);
   await logLibraryEvent("INFO", summary);
   return { moves, messages: [summary, ...messages] };
@@ -235,6 +268,7 @@ export async function downloadLibraryImages(root, files, openAI) {
   const artists = new Map();
   const messages = [];
   let downloaded = 0;
+  const jobs = [];
   await logLibraryEvent("INFO", `开始补充图片 ${root}`);
   for (const audioFile of files) {
     try {
@@ -262,13 +296,32 @@ export async function downloadLibraryImages(root, files, openAI) {
         else missing.push(filename);
       }
       if (!missing.length) continue;
-      let links;
+      jobs.push({ directory, artist, songs, missing });
+    } catch (error) {
+      messages.push(`${artist}：图片处理失败，${error.message}`);
+    }
+  }
+  const batchSize = Math.max(1, Math.floor(openAI.filesPerRequest || 5));
+  const concurrency = Math.max(1, Math.floor(openAI.concurrency || 1));
+  const batches = [];
+  for (let index = 0; index < jobs.length; index += batchSize) batches.push(jobs.slice(index, index + batchSize));
+  let nextBatch = 0;
+  await logLibraryEvent("INFO", `图片任务配置：模型=${openAI.model}，每批=${batchSize}，并发=${concurrency}，批次数=${batches.length}`);
+  await Promise.all(Array.from({ length: Math.min(concurrency, batches.length) }, async () => {
+    while (nextBatch < batches.length) {
+      const batchIndex = nextBatch++;
+      const batch = batches[batchIndex];
+      let batchLinks;
       try {
-        links = await requestArtworkLinks(artist, songs, missing, openAI);
+        batchLinks = await requestArtworkLinks(batch, openAI);
       } catch (error) {
-        messages.push(`${artist}：跳过 ${missing.join("、")}，${error.message}`);
+        const failure = `图片第 ${batchIndex + 1} 批失败（${batch.map((job) => job.artist).join("、")}）：${error.message}`;
+        messages.push(failure);
+        await logLibraryEvent("ERROR", failure);
         continue;
       }
+      for (const { directory, artist, missing } of batch) {
+      const links = batchLinks[artist];
       for (const filename of missing) {
         const url = links[filename];
         if (typeof url !== "string" || !url.trim()) {
@@ -288,10 +341,9 @@ export async function downloadLibraryImages(root, files, openAI) {
           messages.push(`${artist}/${filename}：${error.message}，已跳过。`);
         }
       }
-    } catch (error) {
-      messages.push(`${artist}：图片处理失败，${error.message}`);
+      }
     }
-  }
+  }));
   const summary = `图片处理完成：检查 ${artists.size} 个歌手目录，下载 ${downloaded} 张图片。`;
   for (const message of messages) await logLibraryEvent("INFO", message);
   await logLibraryEvent("INFO", summary);

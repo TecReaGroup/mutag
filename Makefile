@@ -1,21 +1,29 @@
 .DEFAULT_GOAL := run
 
+ifeq ($(OS),Windows_NT)
+SHELL := cmd.exe
+.SHELLFLAGS := /d /s /c
+NPM := chcp 65001 >nul && npm
+else
+NPM := npm
+endif
+
 .PHONY: install run build dist pack preview
 
 install:
-	npm ci
+	$(NPM) ci
 
 run:
-	npm run dev
+	$(NPM) run dev
 
 build:
-	npm run build
+	$(NPM) run build
 
 dist:
-	npm run dist
+	$(NPM) run dist
 
 pack:
-	npm run pack
+	$(NPM) run pack
 
 preview:
-	npm run preview
+	$(NPM) run preview

@@ -214,18 +214,26 @@ function FieldSkeletonRows() {
   );
 }
 
-function CoverPreview({ image }: { image: string; muted?: boolean }) {
+function CoverPreview({ image, muted = false, onClick }: { image: string; muted?: boolean; onClick?: () => void }) {
+  const preview = (
+    <div className={`h-20 w-20 flex-shrink-0 overflow-hidden rounded border border-[#d0d7de] bg-white ${onClick ? "cursor-pointer hover:border-[#0969da] transition-colors" : ""}`}>
+      {image ? (
+        <img src={image} alt="Album cover" className="h-full w-full object-cover" />
+      ) : (
+        <div className="h-full w-full flex items-center justify-center text-[#8c959f] bg-[#f6f8fa]">
+          <ImageIcon size={24} />
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex items-center gap-3 min-h-[92px]">
-      <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded border border-[#d0d7de] bg-white">
-        {image ? (
-          <img src={image} alt="Album cover" className="h-full w-full object-cover" />
-        ) : (
-          <div className="h-full w-full flex items-center justify-center text-[#8c959f] bg-[#f6f8fa]">
-            <ImageIcon size={24} />
-          </div>
-        )}
-      </div>
+      {onClick ? (
+        <button type="button" onClick={onClick} title="Import image" className="rounded focus:outline-none focus:ring-2 focus:ring-[#0969da]">
+          {preview}
+        </button>
+      ) : preview}
     </div>
   );
 }
@@ -1127,7 +1135,7 @@ export function AudioTagEditor() {
                     </label>
                   </div>
                   <p className="text-xs text-[#656d76]">
-                    {t("/meta completes metadata in batches using these limits. Normal conversations use a single request.", "/meta 使用这些限制分批补齐元数据，普通对话使用单次请求。")}
+                    {t("All LLM commands use the selected model's settings. Batch size counts files for /meta and artist directories for /image. Conversations use one request.", "所有 LLM 命令使用所选模型的配置。/meta 按文件分批，/image 按歌手目录分批；普通对话使用单次请求。")}
                   </p>
                   <label className="block">
                     <div className="text-[10px] text-[#8c959f] tracking-wider mb-1">{t("Maximum wait (seconds)", "最多等待秒数")}</div>
@@ -1415,7 +1423,7 @@ export function AudioTagEditor() {
                       {isImageField ? (
                         <>
                           <div className="flex-1 px-3 py-2">
-                            <CoverPreview image={editVal} />
+                            <CoverPreview image={editVal} onClick={isFileOperationBusy ? undefined : importImage} />
                           </div>
                           {!isFileOperationBusy && (
                             <div className="self-stretch flex items-center flex-shrink-0">
