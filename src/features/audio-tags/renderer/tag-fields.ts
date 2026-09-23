@@ -6,7 +6,7 @@ export { normalizeTagKey } from "../tag-rules.js";
 export interface TagField { key: string; label: string }
 export type DiffStatus = "unchanged" | "modified" | "added" | "deleted";
 
-export const DEFAULT_FIELD_KEYS = ["image", "title", "artist", "album", "year", "genre", "bpm", "comment", "lyrics"];
+export const DEFAULT_FIELD_KEYS = ["image", "title", "artist", "album", "year", "genre", "comment", "lyrics"];
 const TAG_LABELS: Record<string, string> = {
   image: "Album cover", title: "Title", artist: "Artist", album: "Album", year: "Year", genre: "Genre", bpm: "BPM", comment: "Comment", lyrics: "Lyrics",
   album_artist: "Album Artist", composer: "Composer", track_number: "Track Number", track_total: "Track Total", disc_number: "Disc Number", disc_total: "Disc Total",

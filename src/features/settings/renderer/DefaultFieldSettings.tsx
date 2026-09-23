@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ChevronDown, ChevronUp, GripVertical, Trash2 } from "lucide-react";
+import { GripVertical, Trash2 } from "lucide-react";
 import { IconButton } from "../../../shared/renderer/controls";
 import { AddChoiceButton } from "../../../shared/renderer/AddChoiceButton";
 import type { Language, Translate } from "../../../shared/renderer/localization";
@@ -25,8 +25,6 @@ export function DefaultFieldSettings({ keys, onChange, language, t }: { keys: st
       onDragEnd={() => { dragFrom.current = null; setDragOver(null); }}
       className={`flex items-center gap-2 rounded border bg-surface px-3 py-2 ${dragOver === index ? "border-primary" : "border-border"}`}>
       <GripVertical size={14} className="cursor-grab text-subtle" /><span className="w-6 text-[10px] text-subtle">{index + 1}</span><span className="flex-1 text-sm">{tagLabel(key, language)}</span>
-      <IconButton title={t("Move up", "上移")} disabled={index === 0} onClick={() => reorder(index, index - 1)}><ChevronUp size={14} /></IconButton>
-      <IconButton title={t("Move down", "下移")} disabled={index === keys.length - 1} onClick={() => reorder(index, index + 1)}><ChevronDown size={14} /></IconButton>
       <IconButton title={t("Remove from defaults", "从默认字段移除")} onClick={() => onChange(keys.filter((entry) => entry !== key))}><Trash2 size={14} /></IconButton>
     </div>)}</div>
     <AddChoiceButton label={t("Add default field", "添加默认字段")} choices={knownTagFields(language).filter((field) => !keys.includes(field.key)).map((field) => ({ ...field, value: field.key }))} onChoose={(key) => onChange([...keys, key])} />
