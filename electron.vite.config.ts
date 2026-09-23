@@ -7,7 +7,7 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        external: ['electron', 'node-taglib-sharp'],
+        external: ['electron', 'node-taglib-sharp', 'ffmpeg-static'],
         input: {
           index: path.resolve(__dirname, 'src/app/main/index.js'),
         },

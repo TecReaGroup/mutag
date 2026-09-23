@@ -7,7 +7,7 @@ function exposeDesktopApi() {
     openLastFolder: (root) => ipcRenderer.invoke("audio-tags:open-last-folder", root),
     organise: (root) => ipcRenderer.invoke("audio-tags:organise", { root }),
     downloadImages: (root, openAI) => ipcRenderer.invoke("audio-tags:download-images", { root, openAI }),
-    generateLyrics: (root, openAI) => ipcRenderer.invoke("audio-tags:generate-lyrics", { root, openAI }),
+    generateLyrics: (root, openAI, paths) => ipcRenderer.invoke("audio-tags:generate-lyrics", { root, openAI, paths }),
     loadConfig: () => ipcRenderer.invoke("audio-tags:load-config"),
     saveConfig: (config) => ipcRenderer.invoke("audio-tags:save-config", config),
     saveProjectState: (root, state) =>

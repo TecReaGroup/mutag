@@ -21,6 +21,7 @@ build/
 coverage/
 
 # Logs
+temp/lyrics-audio-*/
 log/
 *.log
 npm-debug.log*
