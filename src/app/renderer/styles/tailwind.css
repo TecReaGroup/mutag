@@ -1,0 +1,4 @@
+@import 'tailwindcss' source(none);
+@source '../**/*.{js,ts,jsx,tsx}';
+@source '../../../features/**/renderer/**/*.{js,ts,jsx,tsx}';
+@source '../../../shared/renderer/**/*.{js,ts,jsx,tsx}';

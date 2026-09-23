@@ -1,5 +1,3 @@
-/* Global thin, subtle scrollbars — applied everywhere. `.thin-scrollbar` kept as alias. */
-
 *,
 .thin-scrollbar {
   scrollbar-width: thin;

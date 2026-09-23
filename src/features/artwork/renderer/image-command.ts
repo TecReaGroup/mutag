@@ -1,4 +1,4 @@
-import type { ChatCommand, ChatCommandContext, ChatCommandOutcome } from "./chat-commands";
+import type { ChatCommand, ChatCommandContext, ChatCommandOutcome } from "../../music-library/command-contracts";
 
 /** Fill missing artist images while preserving the current audio file state. */
 async function executeImage(context: ChatCommandContext): Promise<ChatCommandOutcome> {

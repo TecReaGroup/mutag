@@ -1,28 +1,7 @@
-import type { AudioFile, MutagConfig, MutagProjectState } from "../contracts";
-import { organiseCommand } from "./organise-command";
-import { imageCommand } from "./image-command";
-import { metaCommand } from "./meta-command";
-
-export interface ChatCommandContext {
-  projectRoot: string;
-  files: AudioFile[];
-  selectedId: string;
-  chatMessages: MutagProjectState["chatMessages"];
-  openAI: MutagConfig["openAI"];
-}
-
-export interface ChatCommandOutcome {
-  files: AudioFile[];
-  selectedId: string;
-  message: string;
-}
-
-export interface ChatCommand {
-  name: string;
-  description: string;
-  progressMessage: string;
-  execute: (context: ChatCommandContext) => Promise<ChatCommandOutcome>;
-}
+import type { ChatCommand } from "../../features/music-library/command-contracts";
+import { organiseCommand } from "../../features/music-library/renderer/organise-command";
+import { imageCommand } from "../../features/artwork/renderer/image-command";
+import { metaCommand } from "../../features/audio-tags/renderer/meta-command";
 
 export const CHAT_COMMANDS: readonly ChatCommand[] = [metaCommand, organiseCommand, imageCommand];
 

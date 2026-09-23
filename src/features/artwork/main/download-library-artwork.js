@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
-import { constants } from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import imageDownloadPrompt from "../../../../data/prompt/image_download_prompt.md?raw";
 import { logEvent } from "../../../shared/main/logging.js";
+import { filenameFromTag } from "../../music-library/main/library-paths.js";
 
 const require = createRequire(import.meta.url);
 const { nativeImage } = require("electron");
@@ -60,16 +60,6 @@ async function searchArtworkCandidates(artist, songs, missing) {
   }
   await logLibraryEvent("INFO", `${artist} 图片检索获得 ${candidates.length} 个候选`);
   return candidates;
-}
-
-/** Convert a tag to a portable, single filename component. */
-function filenameFromTag(value) {
-  const filename = String(value ?? "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "")
-    .replace(/\s+/g, " ").trim().replace(/[. ]+$/g, "");
-  if (!filename || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(filename)) {
-    throw new Error("歌手或歌名为空，或不能用作文件名");
-  }
-  return filename;
 }
 
 /** Check existence without treating permission failures as missing files. */
@@ -169,97 +159,6 @@ async function downloadArtwork(url, destination) {
     throw error;
   }
   await output.close();
-}
-
-/** Remove empty descendants bottom-up without following directory links. */
-async function removeEmptyDirectories(root, messages) {
-  let removed = 0;
-  async function visit(directory) {
-    try {
-      const entries = await fs.readdir(directory, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.isSymbolicLink()) await visit(path.join(directory, entry.name));
-      }
-      if (directory === root) return;
-      // rmdir refuses nonempty directories, including files created during cleanup.
-      await fs.rmdir(directory);
-      removed += 1;
-      await logLibraryEvent("INFO", `删除空文件夹 ${directory}`);
-    } catch (error) {
-      if (["ENOTEMPTY", "EEXIST", "ENOENT"].includes(error.code)) return;
-      const warning = `空文件夹清理失败 ${directory}：${error.message}`;
-      messages.push(warning);
-      await logLibraryEvent("WARN", warning);
-    }
-  }
-  await visit(root);
-  return removed;
-}
-
-/** Organise scanned audio files and reconcile persisted paths. */
-export async function organiseLibrary(root, files, projectState) {
-  const realRoot = await fs.realpath(root);
-  const moves = [];
-  const messages = [];
-  let unchanged = 0;
-  let skipped = 0;
-  await logLibraryEvent("INFO", `开始整理 ${root}，共 ${files.length} 个音频文件`);
-
-  for (const audioFile of files) {
-    try {
-      const artistName = filenameFromTag(audioFile.savedTags.artist);
-      const title = filenameFromTag(audioFile.savedTags.title);
-      const directory = path.join(root, artistName);
-      await fs.mkdir(directory, { recursive: true });
-      const realDirectory = await fs.realpath(directory);
-      const relativeDirectory = path.relative(realRoot, realDirectory);
-      if (relativeDirectory.startsWith(`..${path.sep}`) || relativeDirectory === ".." || path.isAbsolute(relativeDirectory)) {
-        throw new Error("歌手目录指向当前音乐目录之外");
-      }
-      const destination = path.join(directory, `${title}${path.extname(audioFile.path)}`);
-      if (path.resolve(audioFile.path) !== destination) {
-        // Exclusive copy also supports different volumes and never replaces an existing song.
-        await fs.copyFile(audioFile.path, destination, constants.COPYFILE_EXCL);
-        try {
-          await fs.unlink(audioFile.path);
-        } catch (error) {
-          await fs.unlink(destination);
-          throw error;
-        }
-        moves.push({ originalPath: audioFile.path, path: destination, name: path.basename(destination) });
-        await logLibraryEvent("INFO", `移动 ${audioFile.path} -> ${destination}`);
-      } else {
-        unchanged += 1;
-      }
-    } catch (error) {
-      skipped += 1;
-      const reason = error.code === "EEXIST" ? "目标文件已存在" : error.message;
-      messages.push(`跳过 ${audioFile.name}：${reason}`);
-      await logLibraryEvent("WARN", messages[messages.length - 1]);
-    }
-  }
-
-  if (projectState && moves.length) {
-    const movesByPath = new Map(moves.map((move) => [move.originalPath, move.path]));
-    const updatedState = {
-      ...projectState,
-      selectedId: movesByPath.get(projectState.selectedId) ?? projectState.selectedId,
-      files: Object.fromEntries(Object.entries(projectState.files ?? {}).map(([filePath, savedState]) => [
-        movesByPath.get(filePath) ?? filePath, savedState,
-      ])),
-    };
-    try {
-      await fs.writeFile(path.join(root, "mutag.json"), JSON.stringify(updatedState, null, 2), "utf8");
-    } catch (error) {
-      messages.push(`文件已整理，但项目状态保存失败：${error.message}`);
-    }
-  }
-
-  const removedDirectories = await removeEmptyDirectories(realRoot, messages);
-  const summary = `整理完成：移动 ${moves.length} 个文件，${unchanged} 个已在正确位置，跳过 ${skipped} 个，清理 ${removedDirectories} 个空文件夹。`;
-  for (const message of messages) await logLibraryEvent("INFO", message);
-  await logLibraryEvent("INFO", summary);
-  return { moves, messages: [summary, ...messages] };
 }
 
 /** Fill missing artwork in existing artist directories without moving audio files. */

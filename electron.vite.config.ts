@@ -9,7 +9,7 @@ export default defineConfig({
       rollupOptions: {
         external: ['electron', 'node-taglib-sharp'],
         input: {
-          index: path.resolve(__dirname, 'src/main/index.js'),
+          index: path.resolve(__dirname, 'src/app/main/index.js'),
         },
       },
     },
@@ -18,7 +18,7 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: path.resolve(__dirname, 'src/preload/index.cjs'),
+          index: path.resolve(__dirname, 'src/app/preload/index.cjs'),
         },
       },
     },

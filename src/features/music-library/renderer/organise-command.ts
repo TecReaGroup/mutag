@@ -1,4 +1,4 @@
-import type { ChatCommand, ChatCommandContext, ChatCommandOutcome } from "./chat-commands";
+import type { ChatCommand, ChatCommandContext, ChatCommandOutcome } from "../command-contracts";
 
 /** Save the current project, organise its files, and reconcile moved paths. */
 async function executeOrganise(context: ChatCommandContext): Promise<ChatCommandOutcome> {

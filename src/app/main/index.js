@@ -1,7 +1,10 @@
 import path from "node:path";
 import { createRequire } from "node:module";
-import { registerAudioTagIpc } from "../features/audio-tags/main/register-audio-tag-ipc.js";
-import { logEvent } from "../shared/main/logging.js";
+import { registerAudioTagIpc } from "../../features/audio-tags/main/register-audio-tag-ipc.js";
+import { registerLibraryIpc } from "../../features/music-library/main/register-library-ipc.js";
+import { registerSettingsIpc } from "../../features/settings/main/register-settings-ipc.js";
+import { registerArtworkIpc } from "../../features/artwork/main/register-artwork-ipc.js";
+import { logEvent } from "../../shared/main/logging.js";
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow } = require("electron");
@@ -45,6 +48,9 @@ function createWindow() {
 }
 
 registerAudioTagIpc();
+registerLibraryIpc();
+registerSettingsIpc();
+registerArtworkIpc();
 
 app.whenReady().then(() => {
   logEvent("INFO", "app", `Electron 已就绪，版本=${process.versions.electron}`);

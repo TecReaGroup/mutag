@@ -18,11 +18,6 @@ export interface AudioFile {
   tempTags: AudioTag | null;
 }
 
-export interface OrganiseLibraryResult {
-  moves: { originalPath: string; path: string; name: string }[];
-  messages: string[];
-}
-
 export type SaveTagsResult =
   | {
       ok: true;
@@ -34,38 +29,3 @@ export type SaveTagsResult =
       ok: false;
       error: string;
     };
-
-export interface MutagConfig {
-  language?: "en" | "zh-CN";
-  models?: MutagConfig["openAI"][];
-  lastFolder: string;
-  openAI: {
-    baseURL: string;
-    apiKey: string;
-    model: string;
-    filesPerRequest: number;
-    concurrency: number;
-    timeoutSeconds: number;
-  };
-  audioTag: {
-    defaultFieldKeys: string[];
-  };
-  layout: {
-    leftW: number;
-    rightW: number;
-  };
-}
-
-export interface MutagProjectState {
-  selectedId: string;
-  files: Record<string, {
-    tempTags: AudioTag | null;
-  }>;
-  chatMessages: { role: "user" | "assistant" | "system"; content: string }[];
-}
-
-export interface OpenFolderResult {
-  root: string;
-  files: AudioFile[];
-  projectState: Partial<MutagProjectState> | null;
-}
