@@ -338,6 +338,18 @@ function repairId3v2TextFrames(file) {
   }
 }
 
+/** Save embedded LRC without applying title validation or renaming the track. */
+export function writeLyrics(filePath, lyrics) {
+  const file = File.createFromPath(filePath);
+  try {
+    repairId3v2TextFrames(file);
+    file.tag.lyrics = lyrics;
+    file.save();
+  } finally {
+    file.dispose();
+  }
+}
+
 export async function writeTags(filePath, tags) {
   await validateTitleBeforeSave(filePath, tags);
   const originalTags = readTags(filePath);

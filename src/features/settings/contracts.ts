@@ -5,6 +5,8 @@ export interface ModelConfig {
   filesPerRequest: number;
   concurrency: number;
   timeoutSeconds: number;
+  uploadAudio: boolean;
+  webSearch: boolean;
 }
 
 export interface MutagConfig {

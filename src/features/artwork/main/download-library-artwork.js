@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import imageDownloadPrompt from "../../../../data/prompt/image_download_prompt.md?raw";
 import { logEvent } from "../../../shared/main/logging.js";
 import { filenameFromTag } from "../../music-library/main/library-paths.js";
+import { requestCommandCompletion } from "../../../shared/llm/command-completion.js";
 
 const require = createRequire(import.meta.url);
 const { nativeImage } = require("electron");
@@ -90,25 +91,11 @@ async function requestArtworkLinks(batch, openAI) {
     requests.push({ artist, songs, missing, candidates });
   }
   logEvent("INFO", "llm", `开始图片链接请求，模型=${openAI.model}，歌手数量=${batch.length}，等待上限=${openAI.timeoutSeconds}秒`);
-  const response = await fetch(`${openAI.baseURL.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(openAI.apiKey ? { Authorization: `Bearer ${openAI.apiKey}` } : {}),
-    },
-    signal: AbortSignal.timeout((openAI.timeoutSeconds ?? REQUEST_TIMEOUT_MS / 1000) * 1000),
-    body: JSON.stringify({
-      model: openAI.model,
-      messages: [
+  const content = await requestCommandCompletion(openAI, [
         { role: "system", content: imageDownloadPrompt },
         { role: "user", content: JSON.stringify({ requests }) },
-      ],
-    }),
-  });
-  if (!response.ok) throw new Error(`LLM 请求失败：HTTP ${response.status}`);
-  logEvent("INFO", "llm", `图片链接请求响应 HTTP ${response.status}，模型=${openAI.model}`);
-  const completion = await response.json();
-  const content = completion?.choices?.[0]?.message?.content;
+  ]);
+  logEvent("INFO", "llm", `图片链接请求完成，模型=${openAI.model}`);
   const json = typeof content === "string"
     ? content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").match(/\{[\s\S]*\}/)?.[0]
     : null;

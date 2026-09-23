@@ -7,6 +7,7 @@ export interface DesktopApi {
   openLastFolder: (root: string) => Promise<OpenFolderResult | null>;
   organise: (root: string) => Promise<OrganiseLibraryResult>;
   downloadImages: (root: string, model: ModelConfig) => Promise<{ messages: string[] }>;
+  generateLyrics: (root: string, model: ModelConfig) => Promise<{ updates: { path: string; lyrics: string }[]; messages: string[] }>;
   loadConfig: () => Promise<Partial<MutagConfig> | null>;
   saveConfig: (config: MutagConfig) => Promise<{ ok: true }>;
   saveProjectState: (root: string, state: MutagProjectState) => Promise<{ ok: true }>;

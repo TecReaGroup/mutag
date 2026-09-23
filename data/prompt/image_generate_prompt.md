@@ -1,1 +1,6 @@
-生成一张正方形 ablum cover 完全就是直接作为图标，不要有边框：布局为渐变，前面艺术字签名： Hillsong <换行> Youtube，具体风格：Close-up photograph of expressive handwritten calligraphy on textured paper. Characters in dynamic semi-cursive, and English words in elegant cursive with natural stroke shading. Soft pastel gradient background transitioning. Minimalist, artistic vibe.
+# image_generate
+
+生成一张正方形 ablum cover 完全就是直接作为图标，不要有边框
+
+1. 前景为艺术字签名： Hillsong <换行> Youtube，
+2. 具体风格：特写镜头下的手写书法，呈现于质感纸张之上。汉字笔触灵动，呈行书风格；英文单词则以优雅的连笔草书写就，笔画浓淡变化自然。背景采用柔和的渐变色调，营造出极简而富有艺术感的氛围

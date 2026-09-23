@@ -2,8 +2,9 @@ import type { ChatCommand } from "../../features/music-library/command-contracts
 import { organiseCommand } from "../../features/music-library/renderer/organise-command";
 import { imageCommand } from "../../features/artwork/renderer/image-command";
 import { metaCommand } from "../../features/audio-tags/renderer/meta-command";
+import { lyrisCommand } from "../../features/lyrics/renderer/lyris-command";
 
-export const CHAT_COMMANDS: readonly ChatCommand[] = [metaCommand, organiseCommand, imageCommand];
+export const CHAT_COMMANDS: readonly ChatCommand[] = [metaCommand, organiseCommand, imageCommand, lyrisCommand];
 
 /** Resolve slash commands locally; reject unknown names and unsupported arguments. */
 export function resolveChatCommand(text: string): ChatCommand | null {
