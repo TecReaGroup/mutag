@@ -8,7 +8,7 @@ else
 NPM := npm
 endif
 
-.PHONY: install run build dist pack preview
+.PHONY: install run build dist pack preview check
 
 install:
 	$(NPM) ci
@@ -18,6 +18,9 @@ run:
 
 build:
 	$(NPM) run build
+
+check:
+	$(NPM) run typecheck
 
 dist:
 	$(NPM) run dist

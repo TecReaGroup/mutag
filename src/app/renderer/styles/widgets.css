@@ -1,0 +1,21 @@
+@layer components {
+  .ui-button {
+    @apply inline-flex items-center justify-center gap-1.5 rounded border border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground transition-colors;
+    @apply hover:border-placeholder hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-40;
+  }
+  .ui-primary-button { @apply border-primary bg-primary text-white hover:border-primary-hover hover:bg-primary-hover hover:text-white; }
+  .ui-save-button { @apply border-success bg-success text-white hover:border-success-hover hover:bg-success-hover hover:text-white; }
+  .ui-danger-button { @apply border-destructive text-destructive hover:border-destructive hover:bg-danger-muted hover:text-destructive; }
+  .ui-add-button { @apply w-full border-dashed py-2 text-primary hover:border-primary hover:bg-accent; }
+  .ui-icon-button { @apply size-7 shrink-0 border-transparent p-0 hover:border-transparent hover:bg-accent hover:text-primary; }
+  .ui-input { @apply h-8 w-full rounded border border-border bg-surface px-2 text-xs text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:bg-background disabled:opacity-50; }
+  .ui-field-label { @apply block text-[10px] uppercase tracking-wider text-subtle; }
+  .ui-description { @apply text-xs text-muted-foreground; }
+  .ui-panel-header { @apply flex h-10 shrink-0 items-center gap-2 border-b border-border px-4; }
+  .ui-menu { @apply z-20 max-h-56 overflow-y-auto rounded border border-border bg-surface p-1 text-xs shadow-lg; }
+  .ui-menu-item { @apply block w-full rounded px-2 py-1.5 text-left text-xs text-muted-foreground outline-none hover:bg-accent hover:text-primary focus:bg-accent focus:text-primary; }
+  .ui-menu-item[aria-selected="true"] { @apply bg-accent text-primary; }
+  .ui-select-chevron { @apply transition-transform motion-reduce:transition-none; }
+  [aria-expanded="true"][data-placement="bottom"] > .ui-select-chevron { transform: rotate(90deg); }
+  [aria-expanded="true"][data-placement="top"] > .ui-select-chevron { transform: rotate(-90deg); }
+}

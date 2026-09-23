@@ -15,7 +15,11 @@ export const SUPPORTED_TAG_KEYS = new Set([
   "musicip_id", "amazon_id",
 ]);
 
-/** Resolve known aliases without accepting inherited object properties. */
+/**
+ * Resolve known aliases without accepting inherited object properties.
+ * @param {string} key
+ * @returns {string}
+ */
 export function normalizeTagKey(key) {
   return Object.hasOwn(TAG_KEY_ALIASES, key) ? TAG_KEY_ALIASES[key] : key;
 }

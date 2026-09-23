@@ -1,0 +1,60 @@
+import { useEffect, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import type { AudioFile } from "../../audio-tags/contracts";
+import type { ModelConfig } from "../../settings/contracts";
+import type { ChatMessage } from "../contracts";
+import type { ChatCommand } from "../../music-library/command-contracts";
+import { hasTagChanges } from "../../audio-tags/renderer/tag-fields";
+import { errorMessage } from "../../../shared/renderer/error-message";
+import { requestChat } from "./chat-request";
+
+interface ConversationSource {
+  root: string; files: AudioFile[]; selectedId: string; messages: ChatMessage[];
+  setFiles: Dispatch<SetStateAction<AudioFile[]>>; setSelectedId: Dispatch<SetStateAction<string>>; setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+}
+
+/** Own chat cancellation and command execution against a persisted library snapshot. */
+export function useConversation(session: ConversationSource, model: ModelConfig, resolveCommand: (text: string) => ChatCommand | null, flushProject: () => Promise<unknown>) {
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [activeCommand, setActiveCommand] = useState<ChatCommand | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const running = useRef(false);
+  useEffect(() => () => abortRef.current?.abort(), []);
+  const send = async () => {
+    const text = input.trim();
+    if (!text || running.current) return;
+    setError(null);
+    const userMessage: ChatMessage = { role: "user", content: text };
+    let command: ChatCommand | null;
+    try { command = resolveCommand(text); }
+    catch (failure) {
+      const message = errorMessage(failure); setError(message);
+      session.setMessages((previous) => [...previous, userMessage, { role: "assistant", content: message }]);
+      return;
+    }
+    if (command && session.files.some(hasTagChanges)) { setError("请先保存或丢弃待处理修改，再执行命令。"); return; }
+    running.current = true; setSending(true); setInput("");
+    session.setMessages((previous) => [...previous, userMessage]);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      if (command) {
+        setActiveCommand(command);
+        await flushProject();
+        const outcome = await command.execute({ projectRoot: session.root, files: session.files, selectedId: session.selectedId, chatMessages: [...session.messages, userMessage], openAI: model });
+        session.setFiles(outcome.files); session.setSelectedId(outcome.selectedId);
+        session.setMessages((previous) => [...previous, { role: "assistant", content: outcome.message }]);
+      } else {
+        const content = await requestChat(model, session.files, [...session.messages, userMessage], controller.signal);
+        session.setMessages((previous) => [...previous, { role: "assistant", content }]);
+      }
+    } catch (failure) {
+      const message = controller.signal.aborted ? "对话已停止。" : errorMessage(failure);
+      if (!controller.signal.aborted) setError(message);
+      session.setMessages((previous) => [...previous, { role: "assistant", content: command ? `${command.name} 执行失败：${message}` : message }]);
+    } finally { abortRef.current = null; running.current = false; setSending(false); setActiveCommand(null); }
+  };
+  return { input, setInput, sending, activeCommand, error, send, stop: () => abortRef.current?.abort(), clear: () => session.setMessages([]) };
+}

@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MutagProjectState } from "../contracts";
+import { errorMessage } from "../../../shared/renderer/error-message";
 
 const PROJECT_SAVE_DELAY_MS = 250;
 
 /** Own pending snapshots and flush them before commands change file paths. */
 export function useProjectPersistence(root: string, state: MutagProjectState, enabled: boolean) {
+  const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<{ root: string; state: MutagProjectState } | null>(null);
   const writes = useRef<Promise<unknown>>(Promise.resolve());
@@ -24,12 +26,12 @@ export function useProjectPersistence(root: string, state: MutagProjectState, en
     if (!enabled || !root || !window.audioTagApi) return;
     pending.current = { root, state };
     timer.current = setTimeout(() => {
-      void flush().catch((error) => console.warn("Failed to save project state", error));
+      void flush().then(() => setError(null), (failure) => setError(errorMessage(failure)));
     }, PROJECT_SAVE_DELAY_MS);
     return () => { if (timer.current) clearTimeout(timer.current); };
   }, [root, state, enabled, flush]);
   useEffect(() => () => {
     void flush().catch((error) => console.warn("Failed to save project state", error));
   }, [flush]);
-  return { flush };
+  return { flush, error };
 }
