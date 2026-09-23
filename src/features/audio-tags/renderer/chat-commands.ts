@@ -1,4 +1,4 @@
-import type { AudioFile, MutagConfig, MutagProjectState } from "@/shared/audio-tags";
+import type { AudioFile, MutagConfig, MutagProjectState } from "../contracts";
 import { organiseCommand } from "./organise-command";
 import { imageCommand } from "./image-command";
 import { metaCommand } from "./meta-command";

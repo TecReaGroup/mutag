@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { ChevronLeft, ChevronRight, Save, FileAudio, Plus, X, Trash2, FolderOpen, Settings, ArrowLeft, GripVertical, Undo2, Upload, Download, Image as ImageIcon } from "lucide-react";
-import type { AudioFile, AudioTag, MutagConfig, MutagProjectState, OpenFolderResult } from "@/shared/audio-tags";
+import type { AudioFile, AudioTag, MutagConfig, MutagProjectState, OpenFolderResult } from "../contracts";
 import { CHAT_COMMANDS, resolveChatCommand } from "./chat-commands";
 import type { ChatCommand } from "./chat-commands";
 

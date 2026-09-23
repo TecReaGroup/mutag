@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import imageDownloadPrompt from "../../data/prompt/image_download_prompt.md?raw";
-import { logEvent } from "./logging.js";
+import imageDownloadPrompt from "../../../../data/prompt/image_download_prompt.md?raw";
+import { logEvent } from "../../../shared/main/logging.js";
 
 const require = createRequire(import.meta.url);
 const { nativeImage } = require("electron");

@@ -1,4 +1,4 @@
-import type { AudioTag, MutagConfig, MutagProjectState, OpenFolderResult, OrganiseLibraryResult, SaveTagsResult } from "@/shared/audio-tags";
+import type { AudioTag, MutagConfig, MutagProjectState, OpenFolderResult, OrganiseLibraryResult, SaveTagsResult } from "../contracts";
 
 declare global {
   interface Window {
