@@ -52,7 +52,7 @@ export function MusicWorkspace() {
 
   if (showSettings) return <SettingsPage commands={CHAT_COMMANDS} disabledCommands={disabledCommands} onDisabledCommandsChange={preferences.setDisabledCommands} language={language} onLanguageChange={preferences.setLanguage} defaultKeys={defaultKeys} onDefaultKeysChange={preferences.setDefaultKeys} models={config.models ?? []} activeModel={config.openAI} onModelsChange={preferences.setModels} disabled={fileOperationBusy} onBack={() => setShowSettings(false)} t={t} />;
 
-  return <main className="flex h-screen w-full overflow-hidden border-t border-border bg-background">
+  return <main className="ui-page-enter flex h-screen w-full overflow-hidden border-t border-border bg-background">
     <aside className="relative flex shrink-0 flex-col bg-surface" style={{ width: config.layout.leftW }}>
       <AudioFileList files={session.files} selectedId={session.selectedId} onSelect={session.setSelectedId} onOpenFolder={() => { if (!fileOperationBusy && !conversation.sending) void session.openFolder(persistence.flush); }} scanning={session.scanning} disabled={fileOperationBusy || conversation.sending} t={t} />
       <IconButton title={t("Settings", "设置")} onClick={() => setShowSettings(true)} disabled={fileOperationBusy} className="absolute bottom-3 left-3 rounded-full border-border shadow-sm"><Settings size={14} /></IconButton>

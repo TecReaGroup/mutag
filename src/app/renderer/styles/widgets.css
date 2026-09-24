@@ -15,7 +15,67 @@
   .ui-menu { @apply z-20 max-h-56 overflow-y-auto rounded border border-border bg-surface p-1 text-xs shadow-lg; }
   .ui-menu-item { @apply block w-full rounded px-2 py-1.5 text-left text-xs text-muted-foreground outline-none hover:bg-accent hover:text-primary focus:bg-accent focus:text-primary; }
   .ui-menu-item[aria-selected="true"] { @apply bg-accent text-primary; }
-  .ui-select-chevron { @apply transition-transform motion-reduce:transition-none; }
+  .ui-select-chevron { transition: transform var(--ui-motion-standard) var(--ui-ease-out); }
   [aria-expanded="true"][data-placement="bottom"] > .ui-select-chevron { transform: rotate(90deg); }
   [aria-expanded="true"][data-placement="top"] > .ui-select-chevron { transform: rotate(-90deg); }
+}
+
+:root {
+  --ui-motion-fast: 120ms;
+  --ui-motion-standard: 180ms;
+  --ui-motion-page: 220ms;
+  --ui-ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@layer components {
+  .ui-button, .ui-input, .ui-menu-item, .ui-nav-item, .ui-tab {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: var(--ui-motion-fast);
+    transition-timing-function: var(--ui-ease-out);
+  }
+  .ui-button {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  }
+  .ui-button:active:not(:disabled) { transform: translateY(1px); }
+  .ui-input:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 18%, transparent); }
+  .ui-nav-item:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+  }
+  .ui-nav-item:disabled, .ui-tab:disabled { cursor: default; opacity: 0.5; }
+  .ui-tab:hover:not(:disabled) { background-color: var(--color-background); }
+  .ui-tab-indicator {
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    height: 2px;
+    background: var(--color-primary);
+    pointer-events: none;
+    transition: transform var(--ui-motion-standard) var(--ui-ease-out);
+  }
+  .ui-page-enter { animation: ui-fade-in var(--ui-motion-page) var(--ui-ease-out); }
+  .ui-content-enter > *, .ui-disclosure-content:not([hidden]) {
+    animation: ui-content-in var(--ui-motion-standard) var(--ui-ease-out);
+  }
+  .ui-menu { animation: ui-content-in var(--ui-motion-fast) var(--ui-ease-out); }
+  .ui-disclosure-chevron { transition: transform var(--ui-motion-standard) var(--ui-ease-out); }
+}
+
+@keyframes ui-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ui-content-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .ui-button:active:not(:disabled) { transform: none; }
 }
