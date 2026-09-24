@@ -8,6 +8,7 @@ export interface ChatCommandContext {
   selectedId: string;
   chatMessages: ChatMessage[];
   openAI: ModelConfig;
+  signal: AbortSignal;
 }
 
 export interface ChatCommandOutcome {

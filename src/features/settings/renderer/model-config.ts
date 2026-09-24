@@ -2,7 +2,7 @@ import type { ModelConfig } from "../contracts";
 
 export const DEFAULT_MODEL: ModelConfig = {
   baseURL: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini",
-  filesPerRequest: 5, concurrency: 1, timeoutSeconds: 60,
+  filesPerRequest: 5, concurrency: 1, timeoutSeconds: 200,
   uploadAudio: false, webSearch: false, imageGeneration: false,
 };
 export const DEFAULT_LAYOUT = { leftW: 224, rightW: 208 };

@@ -30,7 +30,15 @@ async function executeImage(context: ChatCommandContext): Promise<ChatCommandOut
 async function executeImageGeneration(context: ChatCommandContext): Promise<ChatCommandOutcome> {
   const api = window.audioTagApi;
   if (!api || !context.projectRoot) throw new Error("请先打开需要补充图片的音乐目录。");
-  return proposeCovers(context, await api.generateImages(context.projectRoot, context.openAI));
+  context.signal.throwIfAborted();
+  const requestId = crypto.randomUUID();
+  const cancel = () => api.cancelImageGeneration(requestId);
+  context.signal.addEventListener("abort", cancel, { once: true });
+  try {
+    return proposeCovers(context, await api.generateImages(context.projectRoot, context.openAI, requestId));
+  } finally {
+    context.signal.removeEventListener("abort", cancel);
+  }
 }
 
 export const imageGenerationCommand: ChatCommand = {

@@ -10,6 +10,7 @@ const { nativeImage } = createRequire(import.meta.url)("electron");
 const IMAGE_NAMES = ["artist.jpg", "cover.jpg"];
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const JPEG_QUALITY = 90;
+const DEFAULT_CONCURRENCY = 1;
 
 /** Decode provider output into a bounded JPEG. */
 async function decodeGeneratedImage(encoded, url, signal) {
@@ -39,9 +40,9 @@ async function decodeGeneratedImage(encoded, url, signal) {
 }
 
 /** Adapt image generation to native Gemini and OpenAI-compatible endpoints. */
-async function requestArtistImage(model, artist) {
+async function requestArtistImage(model, artist, cancellation) {
   const prompt = imageGeneratePrompt.replaceAll("<artist>", () => artist);
-  const signal = AbortSignal.timeout(model.timeoutSeconds * 1000);
+  const signal = AbortSignal.any([cancellation, AbortSignal.timeout(model.timeoutSeconds * 1000)]);
   const headers = { "Content-Type": "application/json", ...(model.apiKey ? { Authorization: `Bearer ${model.apiKey}` } : {}) };
   const baseURL = model.baseURL.trim().replace(/\/+$/, "");
   let response;
@@ -64,40 +65,59 @@ async function requestArtistImage(model, artist) {
 }
 
 /** Generate once per artist and preserve any artwork already present. */
-export async function generateLibraryImages(root, files, model) {
+export async function generateLibraryImages(root, files, model, signal) {
   const artists = await collectArtistDirectories(root, files);
   if (!model || !/image/i.test(model.model) || model.imageGeneration !== true) throw new Error("请在当前 LLM 的 image 模型设置中开启图片生成。");
   if (!model.baseURL?.trim() || !Number.isFinite(model.timeoutSeconds) || model.timeoutSeconds <= 0) throw new Error("请配置有效的 LLM 接口地址和等待时间。");
   const messages = [];
   const proposals = [];
   let written = 0;
-  for (const [directory, { artist }] of artists) {
-    try {
-      const missing = [];
-      for (const filename of IMAGE_NAMES) {
-        try {
-          await fs.lstat(path.join(directory, filename));
-          messages.push(`${artist}/${filename} 已存在，保留。`);
-        } catch (error) {
-          if (error.code !== "ENOENT") throw error;
-          missing.push(filename);
+  const concurrency = Number.isFinite(model.concurrency) ? Math.max(1, Math.floor(model.concurrency)) : DEFAULT_CONCURRENCY;
+  const jobs = [...artists];
+  let nextJob = 0;
+  let activeRequests = 0;
+  logEvent("INFO", "artwork", `图片生成任务配置：模型=${model.model}，歌手数量=${jobs.length}，并发上限=${concurrency}，工作数=${Math.min(concurrency, jobs.length)}`);
+  await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, async () => {
+    while (nextJob < jobs.length) {
+      signal.throwIfAborted();
+      const [directory, { artist }] = jobs[nextJob++];
+      try {
+        const missing = [];
+        for (const filename of IMAGE_NAMES) {
+          try {
+            await fs.lstat(path.join(directory, filename));
+            messages.push(`${artist}/${filename} 已存在，保留。`);
+          } catch (error) {
+            if (error.code !== "ENOENT") throw error;
+            missing.push(filename);
+          }
         }
+        if (!missing.length) continue;
+        signal.throwIfAborted();
+        activeRequests += 1;
+        logEvent("INFO", "artwork", `开始生成歌手图片：${artist}，模型=${model.model}，运行中=${activeRequests}/${concurrency}`);
+        let jpeg;
+        try {
+          jpeg = await requestArtistImage(model, artist, signal);
+        } finally {
+          activeRequests -= 1;
+          logEvent("INFO", "artwork", `歌手图片请求结束：${artist}，运行中=${activeRequests}/${concurrency}`);
+        }
+        const tracks = files.filter((file) => path.dirname(file.path) === directory);
+        for (const file of tracks) {
+          signal.throwIfAborted();
+          const pendingArtwork = await stageArtwork(root, file.path, jpeg, missing);
+          proposals.push({ path: file.path, pendingArtwork });
+        }
+        written += 1;
+        messages.push(`${artist} 图片已暂存到 .temp/，Accept 后保存到歌手目录。`);
+      } catch (error) {
+        signal.throwIfAborted();
+        messages.push(`${artist}：${error.message}`);
+        logEvent("ERROR", "artwork", `${artist} 图片生成失败：${error.message}`);
       }
-      if (!missing.length) continue;
-      logEvent("INFO", "artwork", `开始生成歌手图片：${artist}，模型=${model.model}`);
-      const jpeg = await requestArtistImage(model, artist);
-      const tracks = files.filter((file) => path.dirname(file.path) === directory);
-      for (const file of tracks) {
-        const pendingArtwork = await stageArtwork(root, file.path, jpeg, missing);
-        proposals.push({ path: file.path, pendingArtwork });
-      }
-      written += 1;
-      messages.push(`${artist} 图片已暂存到 .temp/，Accept 后保存到歌手目录。`);
-    } catch (error) {
-      messages.push(`${artist}：${error.message}`);
-      logEvent("ERROR", "artwork", `${artist} 图片生成失败：${error.message}`);
     }
-  }
+  }));
   const summary = `图片生成完成：检查 ${artists.size} 个歌手目录，暂存 ${written} 张图片，等待人工 Accept。`;
   for (const message of messages) logEvent("INFO", "artwork", message);
   logEvent("INFO", "artwork", summary);

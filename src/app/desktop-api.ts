@@ -8,7 +8,8 @@ export interface DesktopApi {
   openLastFolder: (root: string) => Promise<OpenFolderResult | null>;
   organise: (root: string) => Promise<OrganiseLibraryResult>;
   downloadImages: (root: string, model: ModelConfig) => Promise<ArtworkOutcome>;
-  generateImages: (root: string, model: ModelConfig) => Promise<ArtworkOutcome>;
+  generateImages: (root: string, model: ModelConfig, requestId: string) => Promise<ArtworkOutcome>;
+  cancelImageGeneration: (requestId: string) => void;
   generateLyrics: (root: string, model: ModelConfig, paths: string[]) => Promise<{ updates: { path: string; lyrics: string }[]; messages: string[] }>;
   loadConfig: () => Promise<Partial<MutagConfig> | null>;
   saveConfig: (config: MutagConfig) => Promise<{ ok: true }>;

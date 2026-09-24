@@ -44,7 +44,7 @@ export function useConversation(session: ConversationSource, model: ModelConfig,
         setActiveCommand(command);
         await flushProject();
         if (controller.signal.aborted) return;
-        const outcome = await command.execute({ projectRoot: session.root, files: session.files, selectedId: session.selectedId, chatMessages: [...session.messages, userMessage], openAI: model });
+        const outcome = await command.execute({ projectRoot: session.root, files: session.files, selectedId: session.selectedId, chatMessages: [...session.messages, userMessage], openAI: model, signal: controller.signal });
         if (controller.signal.aborted) return;
         session.setFiles(outcome.files); session.setSelectedId(outcome.selectedId);
         session.setMessages((previous) => [...previous, { role: "assistant", content: outcome.message }]);
@@ -68,7 +68,7 @@ export function useConversation(session: ConversationSource, model: ModelConfig,
     if (!abortRef.current) return;
     abortRef.current.abort();
     abortRef.current = null; running.current = false; setSending(false); setActiveCommand(null);
-    session.setMessages((previous) => [...previous, { role: "assistant", content: activeCommand ? `${activeCommand.name} 已停止，后续返回结果将被忽略。` : "对话已停止。" }]);
+    session.setMessages((previous) => [...previous, { role: "assistant", content: activeCommand ? `${activeCommand.name} 已停止。` : "对话已停止。" }]);
   };
   return { input, setInput, sending, activeCommand, error, send, stop, clear: () => session.setMessages([]) };
 }
