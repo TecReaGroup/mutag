@@ -8,7 +8,9 @@ import { registerLyricsIpc } from "../../features/lyrics/main/register-lyrics-ip
 import { logEvent } from "../../shared/main/logging.js";
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
+const RENDERER_LOG_LEVELS = new Set(["INFO", "WARN", "ERROR"]);
+const RENDERER_LOG_MODULES = new Set(["chat", "command", "meta"]);
 
 app.name = "mutag";
 logEvent("INFO", "app", `启动 mutag，PID=${process.pid}，工作目录=${process.cwd()}`);
@@ -53,6 +55,10 @@ registerLibraryIpc();
 registerSettingsIpc();
 registerArtworkIpc();
 registerLyricsIpc();
+ipcMain.on("app:log-event", (_event, entry) => {
+  if (!entry || !RENDERER_LOG_LEVELS.has(entry.level) || !RENDERER_LOG_MODULES.has(entry.module) || typeof entry.message !== "string") return;
+  logEvent(entry.level, entry.module, entry.message);
+});
 
 app.whenReady().then(() => {
   logEvent("INFO", "app", `Electron 已就绪，版本=${process.versions.electron}`);

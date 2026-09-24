@@ -19,11 +19,18 @@ async function executeMeta(context: ChatCommandContext): Promise<ChatCommandOutc
   const failures: string[] = [];
   let nextBatch = 0;
   let changedCount = 0;
+  const startedAt = Date.now();
+  let activeRequests = 0;
+  window.audioTagApi?.logEvent("INFO", "meta", `元数据任务配置：模型=${context.openAI.model}，文件数=${context.files.length}，批次数=${batches.length}，每批文件数=${batchSize}，并发上限=${concurrency}，等待上限=${context.openAI.timeoutSeconds}秒`);
 
   await Promise.all(Array.from({ length: Math.min(concurrency, batches.length) }, async () => {
     while (nextBatch < batches.length) {
       const batchIndex = nextBatch++;
       const batch = batches[batchIndex];
+      const batchStartedAt = Date.now();
+      let batchChangedCount = 0;
+      activeRequests += 1;
+      window.audioTagApi?.logEvent("INFO", "meta", `开始元数据批次 ${batchIndex + 1}/${batches.length}，文件数=${batch.length}，运行中=${activeRequests}/${concurrency}`);
       try {
         const content = await requestCommandCompletion(context.openAI, [
               { role: "system", content: metadataPrompt },
@@ -61,13 +68,19 @@ async function executeMeta(context: ChatCommandContext): Promise<ChatCommandOutc
           if (Object.keys(tags).some((key) => tags[key] !== (file.tempTags ?? file.savedTags)[key])) {
             completedFiles.set(file.id, { ...file, tempTags: tags });
             changedCount += 1;
+            batchChangedCount += 1;
           }
         }
+        window.audioTagApi?.logEvent("INFO", "meta", `元数据批次 ${batchIndex + 1}/${batches.length} 完成，待确认修改=${batchChangedCount}，耗时=${Date.now() - batchStartedAt}毫秒`);
       } catch (error) {
         failures.push(`第 ${batchIndex + 1} 批失败：${error instanceof Error ? error.message : String(error)}`);
+        window.audioTagApi?.logEvent("ERROR", "meta", `${failures[failures.length - 1]}，耗时=${Date.now() - batchStartedAt}毫秒`);
+      } finally {
+        activeRequests -= 1;
       }
     }
   }));
+  window.audioTagApi?.logEvent(failures.length ? "WARN" : "INFO", "meta", `元数据补齐结束：文件数=${context.files.length}，待确认修改=${changedCount}，失败批次=${failures.length}/${batches.length}，耗时=${Date.now() - startedAt}毫秒`);
   return {
     files: context.files.map((file) => completedFiles.get(file.id)!),
     selectedId: context.selectedId,

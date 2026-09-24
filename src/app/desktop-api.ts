@@ -4,6 +4,7 @@ import type { ModelConfig, MutagConfig } from "../features/settings/contracts";
 import type { MutagProjectState, OpenFolderResult, OrganiseLibraryResult } from "../features/music-library/contracts";
 
 export interface DesktopApi {
+  logEvent: (level: "INFO" | "WARN" | "ERROR", module: "chat" | "command" | "meta", message: string) => void;
   openFolder: () => Promise<OpenFolderResult | null>;
   openLastFolder: (root: string) => Promise<OpenFolderResult | null>;
   organise: (root: string) => Promise<OrganiseLibraryResult>;

@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 /** Expose only the audio workspace operations to the renderer. */
 function exposeDesktopApi() {
   contextBridge.exposeInMainWorld("audioTagApi", {
+    logEvent: (level, module, message) => ipcRenderer.send("app:log-event", { level, module, message }),
     openFolder: () => ipcRenderer.invoke("audio-tags:open-folder"),
     openLastFolder: (root) => ipcRenderer.invoke("audio-tags:open-last-folder", root),
     organise: (root) => ipcRenderer.invoke("audio-tags:organise", { root }),
