@@ -3,7 +3,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import imageDownloadPrompt from "../../../../data/prompt/image_download_prompt.md?raw";
 import { logEvent } from "../../../shared/main/logging.js";
-import { filenameFromTag } from "../../music-library/main/library-paths.js";
+import { collectArtistDirectories } from "./library-artwork.js";
 import { requestCommandCompletion } from "../../../shared/llm/command-completion.js";
 
 const require = createRequire(import.meta.url);
@@ -150,32 +150,14 @@ async function downloadArtwork(url, destination) {
 
 /** Fill missing artwork in existing artist directories without moving audio files. */
 export async function downloadLibraryImages(root, files, openAI) {
-  const realRoot = await fs.realpath(root);
-  const artists = new Map();
+  const artists = await collectArtistDirectories(root, files);
   const messages = [];
   let downloaded = 0;
   const jobs = [];
   await logLibraryEvent("INFO", `开始补充图片 ${root}`);
-  for (const audioFile of files) {
-    try {
-      const directory = path.join(root, filenameFromTag(audioFile.savedTags.artist));
-      if (path.dirname(path.resolve(audioFile.path)) !== directory) {
-        messages.push(`跳过 ${audioFile.name} 的图片查询：文件尚未归入歌手目录，请先执行 /organise。`);
-        continue;
-      }
-      if (!artists.has(directory)) artists.set(directory, { artist: audioFile.savedTags.artist, songs: [] });
-      artists.get(directory).songs.push({ title: audioFile.savedTags.title, album: audioFile.savedTags.album });
-    } catch (error) {
-      messages.push(`跳过 ${audioFile.name} 的图片查询：${error.message}`);
-    }
-  }
 
   for (const [directory, { artist, songs }] of artists) {
     try {
-      const relativeDirectory = path.relative(realRoot, await fs.realpath(directory));
-      if (relativeDirectory.startsWith(`..${path.sep}`) || relativeDirectory === ".." || path.isAbsolute(relativeDirectory)) {
-        throw new Error("歌手目录指向当前音乐目录之外");
-      }
       const missing = [];
       for (const filename of IMAGE_NAMES) {
         if (await exists(path.join(directory, filename))) messages.push(`${artist}/${filename} 已存在，保留。`);

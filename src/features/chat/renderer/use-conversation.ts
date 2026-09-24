@@ -43,18 +43,32 @@ export function useConversation(session: ConversationSource, model: ModelConfig,
       if (command) {
         setActiveCommand(command);
         await flushProject();
+        if (controller.signal.aborted) return;
         const outcome = await command.execute({ projectRoot: session.root, files: session.files, selectedId: session.selectedId, chatMessages: [...session.messages, userMessage], openAI: model });
+        if (controller.signal.aborted) return;
         session.setFiles(outcome.files); session.setSelectedId(outcome.selectedId);
         session.setMessages((previous) => [...previous, { role: "assistant", content: outcome.message }]);
       } else {
         const content = await requestChat(model, session.files, [...session.messages, userMessage], controller.signal);
+        if (controller.signal.aborted) return;
         session.setMessages((previous) => [...previous, { role: "assistant", content }]);
       }
     } catch (failure) {
-      const message = controller.signal.aborted ? "对话已停止。" : errorMessage(failure);
-      if (!controller.signal.aborted) setError(message);
+      if (controller.signal.aborted) return;
+      const message = errorMessage(failure);
+      setError(message);
       session.setMessages((previous) => [...previous, { role: "assistant", content: command ? `${command.name} 执行失败：${message}` : message }]);
-    } finally { abortRef.current = null; running.current = false; setSending(false); setActiveCommand(null); }
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null; running.current = false; setSending(false); setActiveCommand(null);
+      }
+    }
   };
-  return { input, setInput, sending, activeCommand, error, send, stop: () => abortRef.current?.abort(), clear: () => session.setMessages([]) };
+  const stop = () => {
+    if (!abortRef.current) return;
+    abortRef.current.abort();
+    abortRef.current = null; running.current = false; setSending(false); setActiveCommand(null);
+    session.setMessages((previous) => [...previous, { role: "assistant", content: activeCommand ? `${activeCommand.name} 已停止，后续返回结果将被忽略。` : "对话已停止。" }]);
+  };
+  return { input, setInput, sending, activeCommand, error, send, stop, clear: () => session.setMessages([]) };
 }

@@ -31,12 +31,14 @@ export function MusicWorkspace() {
   const language = config.language ?? "en";
   const t = (english: string, chinese: string) => language === "zh-CN" ? chinese : english;
   const session = useLibrarySession(INITIAL_FILES, preferences.loaded, preferences.initialFolder, preferences.setLastFolder);
-  const conversation = useConversation(session, config.openAI, resolveChatCommand, () => persistence.flush());
+  const disabledCommands = config.disabledCommands ?? [];
+  const enabledCommands = CHAT_COMMANDS.filter((command) => !disabledCommands.includes(command.name));
+  const conversation = useConversation(session, config.openAI, (text) => resolveChatCommand(text, disabledCommands, t), () => persistence.flush());
   const editing = useTagEditing(session, session.scanning || conversation.activeCommand !== null);
   const fileOperationBusy = editing.progress !== null || conversation.activeCommand !== null;
   const projectState = useMemo(() => ({
     selectedId: session.selectedId,
-    files: Object.fromEntries(session.files.map((file) => [file.id, { tempTags: file.tempTags }])),
+    files: Object.fromEntries(session.files.map((file) => [file.id, { tempTags: file.tempTags, pendingArtwork: file.pendingArtwork }])),
     chatMessages: session.messages,
   }), [session.selectedId, session.files, session.messages]);
   const persistence = useProjectPersistence(session.root, projectState, preferences.loaded && !session.scanning && !conversation.activeCommand);
@@ -48,7 +50,7 @@ export function MusicWorkspace() {
   const availableFields = knownTagFields(language).filter((field) => !selectedFields.some((selected) => selected.key === field.key));
   const dirtyFiles = session.files.filter(hasTagChanges);
 
-  if (showSettings) return <SettingsPage language={language} onLanguageChange={preferences.setLanguage} defaultKeys={defaultKeys} onDefaultKeysChange={preferences.setDefaultKeys} models={config.models ?? []} activeModel={config.openAI} onModelsChange={preferences.setModels} disabled={fileOperationBusy} onBack={() => setShowSettings(false)} t={t} />;
+  if (showSettings) return <SettingsPage commands={CHAT_COMMANDS} disabledCommands={disabledCommands} onDisabledCommandsChange={preferences.setDisabledCommands} language={language} onLanguageChange={preferences.setLanguage} defaultKeys={defaultKeys} onDefaultKeysChange={preferences.setDefaultKeys} models={config.models ?? []} activeModel={config.openAI} onModelsChange={preferences.setModels} disabled={fileOperationBusy} onBack={() => setShowSettings(false)} t={t} />;
 
   return <main className="flex h-screen w-full overflow-hidden border-t border-border bg-background">
     <aside className="relative flex shrink-0 flex-col bg-surface" style={{ width: config.layout.leftW }}>
@@ -60,7 +62,7 @@ export function MusicWorkspace() {
     <ResizeDivider label={t("Resize activity panel", "调整活动面板宽度")} onDrag={preferences.resizeRight} />
     <aside className="flex shrink-0 flex-col bg-surface" style={{ width: config.layout.rightW }}>
       <Tabs label={t("Activity", "活动")} tabs={[{ key: "pending", label: t("Pending", "待保存") }, { key: "chat", label: t("Chat", "对话") }]} selectedKey={rightTab} onChange={setRightTab} disabled={fileOperationBusy}>
-        {rightTab === "pending" ? <PendingChanges files={dirtyFiles} selectedId={session.selectedId} fieldsForFile={describeFields} onSelect={session.setSelectedId} onSaveAll={editing.saveAll} onDiscardAll={editing.discardAll} progress={editing.progress} disabled={fileOperationBusy} scanning={session.scanning} t={t} /> : <ChatPanel messages={session.messages} input={conversation.input} onInput={conversation.setInput} sending={conversation.sending} activeCommand={conversation.activeCommand} error={conversation.error} onSend={() => { if (!fileOperationBusy && !session.scanning) void conversation.send(); }} onStop={conversation.stop} onClear={conversation.clear} models={config.models ?? []} activeModel={config.openAI} onModelChange={preferences.selectModel} commands={CHAT_COMMANDS} fileCount={session.files.length} dirtyCount={dirtyFiles.length} disabled={fileOperationBusy} scanning={session.scanning} t={t} />}
+        {rightTab === "pending" ? <PendingChanges files={dirtyFiles} selectedId={session.selectedId} fieldsForFile={describeFields} onSelect={session.setSelectedId} onSaveAll={editing.saveAll} onDiscardAll={editing.discardAll} progress={editing.progress} disabled={fileOperationBusy} scanning={session.scanning} t={t} /> : <ChatPanel messages={session.messages} input={conversation.input} onInput={conversation.setInput} sending={conversation.sending} activeCommand={conversation.activeCommand} error={conversation.error} onSend={() => { if (!fileOperationBusy && !session.scanning) void conversation.send(); }} onStop={conversation.stop} onClear={conversation.clear} models={config.models ?? []} activeModel={config.openAI} onModelChange={preferences.selectModel} commands={enabledCommands} fileCount={session.files.length} dirtyCount={dirtyFiles.length} disabled={fileOperationBusy} scanning={session.scanning} t={t} />}
       </Tabs>
     </aside>
     {(preferences.error || session.error || persistence.error) && <div className="fixed bottom-16 left-4 right-4 z-30"><ErrorNotice message={preferences.error ?? session.error ?? persistence.error!} /></div>}

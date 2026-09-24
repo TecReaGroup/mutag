@@ -5,7 +5,7 @@ import { requestChatCompletion } from "../../../shared/llm/chat-completion.js";
 
 const CHAT_INSTRUCTIONS = "You are a helpful music assistant. Reply conversationally in the user's language. " +
   "The supplied audio tags are context only. This conversation cannot modify files or metadata. " +
-  "For metadata completion suggest /meta, for file organisation /organise, and for artwork downloads /image. " +
+  "For metadata completion suggest /meta, for file organisation /organise, for artwork downloads /image, and for AI-generated artwork /image_gen. " +
   "Do not claim to have executed commands or searched websites without tools.";
 
 /** Send a conversational request with artwork omitted from the file context. */

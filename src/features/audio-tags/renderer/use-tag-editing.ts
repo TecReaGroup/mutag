@@ -35,7 +35,8 @@ export function useTagEditing({ files, selectedId, setFiles, applySavedFile }: T
     try {
       for (const [index, file] of changedFiles.entries()) {
         const tags = { ...(file.tempTags ?? file.savedTags) };
-        const saved = window.audioTagApi ? await window.audioTagApi.saveTags(file.path, tags) : { ok: true as const, tags, path: file.path, name: file.name };
+        const api = window.audioTagApi;
+        const saved = api ? await (file.pendingArtwork ? api.acceptArtwork(file.path, tags, file.pendingArtwork.token) : api.saveTags(file.path, tags)) : { ok: true as const, tags, path: file.path, name: file.name };
         if (!saved.ok) throw new Error(saved.error);
         applySavedFile(file.id, saved);
         savedTags.set(file.id, saved.tags);
@@ -47,14 +48,20 @@ export function useTagEditing({ files, selectedId, setFiles, applySavedFile }: T
   };
   const saveSelected = () => saveFiles(selectedFile && hasTagChanges(selectedFile) ? [selectedFile] : []);
   const saveAll = () => saveFiles(files.filter(hasTagChanges));
-  const discardSelected = () => {
-    if (blocked || saving.current) return;
-    setFiles((previous) => previous.map((file) => file.id === selectedId ? { ...file, tempTags: null } : file));
+  const discardFiles = async (changedFiles: AudioFile[]) => {
+    if (blocked || saving.current || !changedFiles.length) return;
+    saving.current = true; setError(null); setProgress({ done: 0, total: changedFiles.length });
+    try {
+      for (const [index, file] of changedFiles.entries()) {
+        if (file.pendingArtwork) await window.audioTagApi?.discardArtwork(file.path, file.pendingArtwork.token);
+        setFiles((previous) => previous.map((entry) => entry.id === file.id ? { ...entry, tempTags: null, pendingArtwork: null } : entry));
+        setProgress({ done: index + 1, total: changedFiles.length });
+      }
+    } catch (failure) { setError(errorMessage(failure)); }
+    finally { saving.current = false; setProgress(null); }
   };
-  const discardAll = () => {
-    if (blocked || saving.current) return;
-    setFiles((previous) => previous.map((file) => ({ ...file, tempTags: null })));
-  };
+  const discardSelected = () => discardFiles(selectedFile ? [selectedFile] : []);
+  const discardAll = () => discardFiles(files.filter(hasTagChanges));
   const importImage = async () => {
     if (blocked || saving.current || !selectedFile) return;
     setError(null);

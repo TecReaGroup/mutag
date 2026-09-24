@@ -21,6 +21,7 @@ build/
 coverage/
 
 # Logs
+.temp/
 temp/lyrics-audio-*/
 log/
 *.log

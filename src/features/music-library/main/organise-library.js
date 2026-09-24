@@ -4,6 +4,7 @@ import path from "node:path";
 import { filenameFromTag } from "./library-paths.js";
 import { saveProjectState } from "./project-state-storage.js";
 import { logEvent } from "../../../shared/main/logging.js";
+import { PROJECT_WORKSPACE_NAME } from "./project-workspace.js";
 
 /** Remove empty descendants bottom-up without following directory links. */
 async function removeEmptyDirectories(root, messages) {
@@ -12,6 +13,7 @@ async function removeEmptyDirectories(root, messages) {
     try {
       const entries = await fs.readdir(directory, { withFileTypes: true });
       for (const entry of entries) {
+        if (directory === root && entry.name === PROJECT_WORKSPACE_NAME) continue;
         if (entry.isDirectory() && !entry.isSymbolicLink()) await visit(path.join(directory, entry.name));
       }
       if (directory === root) return;

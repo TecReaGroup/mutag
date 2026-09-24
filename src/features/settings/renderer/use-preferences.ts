@@ -31,6 +31,7 @@ export function usePreferences() {
         initialFolder.current = stored.lastFolder ?? "";
         setConfig({
           ...INITIAL_CONFIG, lastFolder: initialFolder.current,
+          disabledCommands: Array.isArray(stored.disabledCommands) ? [...new Set(stored.disabledCommands.filter((name) => typeof name === "string"))] : [],
           language: stored.language === "zh-CN" ? "zh-CN" : "en", openAI, models,
           audioTag: { defaultFieldKeys: [...new Set(defaultKeys.map(normalizeTagKey))] },
           layout: { ...DEFAULT_LAYOUT, ...stored.layout },
@@ -56,11 +57,12 @@ export function usePreferences() {
   }, [config, loaded]);
 
   const setLanguage = useCallback((language: Language) => setConfig((previous) => ({ ...previous, language })), []);
+  const setDisabledCommands = useCallback((disabledCommands: string[]) => setConfig((previous) => ({ ...previous, disabledCommands })), []);
   const setDefaultKeys = useCallback((defaultFieldKeys: string[]) => setConfig((previous) => ({ ...previous, audioTag: { defaultFieldKeys } })), []);
   const setModels = useCallback((models: ModelConfig[], openAI: ModelConfig) => setConfig((previous) => ({ ...previous, models, openAI })), []);
   const selectModel = useCallback((openAI: ModelConfig) => setConfig((previous) => ({ ...previous, openAI })), []);
   const setLastFolder = useCallback((lastFolder: string) => setConfig((previous) => ({ ...previous, lastFolder })), []);
   const resizeLeft = useCallback((delta: number) => setConfig((previous) => ({ ...previous, layout: { ...previous.layout, leftW: Math.max(120, Math.min(480, previous.layout.leftW + delta)) } })), []);
   const resizeRight = useCallback((delta: number) => setConfig((previous) => ({ ...previous, layout: { ...previous.layout, rightW: Math.max(120, Math.min(480, previous.layout.rightW - delta)) } })), []);
-  return { config, loaded, initialFolder: initialFolder.current, error, setLanguage, setDefaultKeys, setModels, selectModel, setLastFolder, resizeLeft, resizeRight };
+  return { config, loaded, initialFolder: initialFolder.current, error, setLanguage, setDisabledCommands, setDefaultKeys, setModels, selectModel, setLastFolder, resizeLeft, resizeRight };
 }

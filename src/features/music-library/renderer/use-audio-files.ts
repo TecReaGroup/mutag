@@ -14,7 +14,7 @@ export function useAudioFiles(initialFiles: AudioFile[], initialSelectedId: stri
   }, []);
   const applySavedFile = useCallback((originalId: string, saved: { tags: AudioTag; path: string; name: string }) => {
     setFiles((previous) => previous.map((file) => file.id === originalId
-      ? { ...file, id: saved.path, path: saved.path, name: saved.name, savedTags: saved.tags, tempTags: null }
+      ? { ...file, id: saved.path, path: saved.path, name: saved.name, savedTags: saved.tags, tempTags: null, pendingArtwork: null }
       : file));
     setSelectedId((previous) => previous === originalId ? saved.path : previous);
   }, []);

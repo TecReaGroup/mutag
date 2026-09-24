@@ -8,7 +8,7 @@ export interface OrganiseLibraryResult {
 
 export interface MutagProjectState {
   selectedId: string;
-  files: Record<string, { tempTags: AudioTag | null }>;
+  files: Record<string, { tempTags: AudioTag | null; pendingArtwork?: AudioFile["pendingArtwork"] }>;
   chatMessages: ChatMessage[];
 }
 

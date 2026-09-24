@@ -39,6 +39,7 @@ export function fieldStatus(original: string, edited: string): DiffStatus {
   return original === edited ? "unchanged" : "modified";
 }
 export function hasTagChanges(file: AudioFile): boolean {
+  if (file.pendingArtwork) return true;
   return file.tempTags !== null && Object.keys({ ...file.savedTags, ...file.tempTags }).some((key) => getTagValue(file.savedTags, key) !== getTagValue(file.tempTags!, key));
 }
 

@@ -7,9 +7,11 @@ export interface ModelConfig {
   timeoutSeconds: number;
   uploadAudio: boolean;
   webSearch: boolean;
+  imageGeneration: boolean;
 }
 
 export interface MutagConfig {
+  disabledCommands?: string[];
   language?: "en" | "zh-CN";
   models?: ModelConfig[];
   lastFolder: string;

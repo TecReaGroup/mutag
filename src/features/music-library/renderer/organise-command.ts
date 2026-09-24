@@ -23,6 +23,7 @@ async function executeOrganise(context: ChatCommandContext): Promise<ChatCommand
 
 export const organiseCommand: ChatCommand = {
   name: "/organise",
+  descriptionEn: "Organise audio files by artist and title when sent.",
   description: "按歌手和歌名重新组织音频文件；发送后执行",
   progressMessage: "正在重新组织音频文件…",
   execute: executeOrganise,

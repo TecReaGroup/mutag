@@ -19,6 +19,7 @@ async function executeLyris(context: ChatCommandContext): Promise<ChatCommandOut
 
 export const lyrisCommand: ChatCommand = {
   name: "/lyris",
+  descriptionEn: "Generate missing LRC lyrics, preserve existing lyrics, and review before saving.",
   description: "为缺失歌词的音频生成 LRC 歌词，跳过已有歌词，审阅后保存",
   progressMessage: "正在为缺失歌词的音频生成待审阅 LRC 歌词…",
   execute: executeLyris,

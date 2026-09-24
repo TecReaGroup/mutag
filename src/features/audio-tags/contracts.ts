@@ -1,3 +1,5 @@
+import type { PendingArtwork } from "../artwork/contracts";
+
 export interface AudioTag {
   image: string;
   title: string;
@@ -11,6 +13,7 @@ export interface AudioTag {
 }
 
 export interface AudioFile {
+  pendingArtwork?: PendingArtwork | null;
   id: string;
   name: string;
   path: string;

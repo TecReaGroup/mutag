@@ -7,6 +7,7 @@ function exposeDesktopApi() {
     openLastFolder: (root) => ipcRenderer.invoke("audio-tags:open-last-folder", root),
     organise: (root) => ipcRenderer.invoke("audio-tags:organise", { root }),
     downloadImages: (root, openAI) => ipcRenderer.invoke("audio-tags:download-images", { root, openAI }),
+    generateImages: (root, openAI) => ipcRenderer.invoke("audio-tags:generate-images", { root, openAI }),
     generateLyrics: (root, openAI, paths) => ipcRenderer.invoke("audio-tags:generate-lyrics", { root, openAI, paths }),
     loadConfig: () => ipcRenderer.invoke("audio-tags:load-config"),
     saveConfig: (config) => ipcRenderer.invoke("audio-tags:save-config", config),
@@ -14,6 +15,8 @@ function exposeDesktopApi() {
       ipcRenderer.invoke("audio-tags:save-project-state", { root, state }),
     saveTags: (path, tags) =>
       ipcRenderer.invoke("audio-tags:save-tags", { path, tags }),
+    acceptArtwork: (path, tags, token) => ipcRenderer.invoke("audio-tags:accept-artwork", { path, tags, token }),
+    discardArtwork: (path, token) => ipcRenderer.invoke("audio-tags:discard-artwork", { path, token }),
     importImage: () => ipcRenderer.invoke("audio-tags:import-image"),
     exportImage: (path) => ipcRenderer.invoke("audio-tags:export-image", { path }),
   });

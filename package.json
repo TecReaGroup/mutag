@@ -7,7 +7,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "electron-vite build",
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev --watch",
     "dist": "npm run build && electron-builder --win portable",
     "pack": "npm run build && electron-builder --dir",
     "postinstall": "electron --version",

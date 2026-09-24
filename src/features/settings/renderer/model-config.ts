@@ -3,7 +3,7 @@ import type { ModelConfig } from "../contracts";
 export const DEFAULT_MODEL: ModelConfig = {
   baseURL: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini",
   filesPerRequest: 5, concurrency: 1, timeoutSeconds: 60,
-  uploadAudio: false, webSearch: false,
+  uploadAudio: false, webSearch: false, imageGeneration: false,
 };
 export const DEFAULT_LAYOUT = { leftW: 224, rightW: 208 };
 
@@ -21,5 +21,6 @@ export function normalizeModel(profile: ModelConfig): ModelConfig {
     timeoutSeconds: positiveInteger(profile.timeoutSeconds, DEFAULT_MODEL.timeoutSeconds),
     uploadAudio: profile.uploadAudio === true,
     webSearch: profile.webSearch === true,
+    imageGeneration: /image/i.test(profile.model) && profile.imageGeneration === true,
   };
 }
