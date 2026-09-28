@@ -7,6 +7,7 @@ import type { ChatCommand } from "../../music-library/command-contracts";
 import { hasTagChanges } from "../../audio-tags/renderer/tag-fields";
 import { errorMessage } from "../../../shared/renderer/error-message";
 import { requestChat } from "./chat-request";
+import { useTranslation } from "../../../shared/renderer/LocalizationProvider";
 
 interface ConversationSource {
   root: string; files: AudioFile[]; selectedId: string; messages: ChatMessage[];
@@ -15,6 +16,7 @@ interface ConversationSource {
 
 /** Own chat cancellation and command execution against a persisted library snapshot. */
 export function useConversation(session: ConversationSource, model: ModelConfig, resolveCommand: (text: string) => ChatCommand | null, flushProject: () => Promise<unknown>) {
+  const { t } = useTranslation();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [activeCommand, setActiveCommand] = useState<ChatCommand | null>(null);
@@ -37,7 +39,7 @@ export function useConversation(session: ConversationSource, model: ModelConfig,
     }
     if (command && session.files.some(hasTagChanges)) {
       window.audioTagApi?.logEvent("WARN", "command", `${command.name} 未执行：存在待处理修改，请先保存或丢弃。`);
-      setError("请先保存或丢弃待处理修改，再执行命令。"); return;
+      setError(t("commands.pendingChanges")); return;
     }
     running.current = true; setSending(true); setInput("");
     session.setMessages((previous) => [...previous, userMessage]);
@@ -55,7 +57,7 @@ export function useConversation(session: ConversationSource, model: ModelConfig,
         setActiveCommand(command);
         await flushProject();
         if (controller.signal.aborted) return;
-        const outcome = await command.execute({ projectRoot: session.root, files: session.files, selectedId: session.selectedId, chatMessages: [...session.messages, userMessage], openAI: model, signal: controller.signal });
+        const outcome = await command.execute({ projectRoot: session.root, files: session.files, selectedId: session.selectedId, chatMessages: [...session.messages, userMessage], openAI: model, signal: controller.signal, t });
         if (controller.signal.aborted) return;
         session.setFiles(outcome.files); session.setSelectedId(outcome.selectedId);
         session.setMessages((previous) => [...previous, { role: "assistant", content: outcome.message }]);
@@ -70,7 +72,7 @@ export function useConversation(session: ConversationSource, model: ModelConfig,
       const message = errorMessage(failure);
       window.audioTagApi?.logEvent("ERROR", module, `${operation} 执行失败，耗时=${Date.now() - startedAt}毫秒：${message}`);
       setError(message);
-      session.setMessages((previous) => [...previous, { role: "assistant", content: command ? `${command.name} 执行失败：${message}` : message }]);
+      session.setMessages((previous) => [...previous, { role: "assistant", content: command ? t("commands.failed", { command: command.name, message }) : message }]);
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null; running.current = false; setSending(false); setActiveCommand(null);
@@ -81,7 +83,7 @@ export function useConversation(session: ConversationSource, model: ModelConfig,
     if (!abortRef.current) return;
     abortRef.current.abort();
     abortRef.current = null; running.current = false; setSending(false); setActiveCommand(null);
-    session.setMessages((previous) => [...previous, { role: "assistant", content: activeCommand ? `${activeCommand.name} 已停止。` : "对话已停止。" }]);
+    session.setMessages((previous) => [...previous, { role: "assistant", content: activeCommand ? t("commands.stopped", { command: activeCommand.name }) : t("chat.stopped") }]);
   };
   return { input, setInput, sending, activeCommand, error, send, stop, clear: () => session.setMessages([]) };
 }

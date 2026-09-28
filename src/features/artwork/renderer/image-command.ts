@@ -21,7 +21,7 @@ function proposeCovers(context: ChatCommandContext, artwork: ArtworkOutcome): Ch
 /** Fill missing artist images while preserving the current audio file state. */
 async function executeImage(context: ChatCommandContext): Promise<ChatCommandOutcome> {
   const api = window.audioTagApi;
-  if (!api || !context.projectRoot) throw new Error("请先打开需要补充图片的音乐目录。");
+  if (!api || !context.projectRoot) throw new Error(context.t("commands.openArtworkFolder"));
   const artwork = await api.downloadImages(context.projectRoot, context.openAI);
   return proposeCovers(context, artwork);
 }
@@ -29,7 +29,7 @@ async function executeImage(context: ChatCommandContext): Promise<ChatCommandOut
 /** Generate artist artwork and propose missing embedded covers. */
 async function executeImageGeneration(context: ChatCommandContext): Promise<ChatCommandOutcome> {
   const api = window.audioTagApi;
-  if (!api || !context.projectRoot) throw new Error("请先打开需要补充图片的音乐目录。");
+  if (!api || !context.projectRoot) throw new Error(context.t("commands.openArtworkFolder"));
   context.signal.throwIfAborted();
   const requestId = crypto.randomUUID();
   const cancel = () => api.cancelImageGeneration(requestId);
@@ -43,16 +43,14 @@ async function executeImageGeneration(context: ChatCommandContext): Promise<Chat
 
 export const imageGenerationCommand: ChatCommand = {
   name: "/image_gen",
-  descriptionEn: "Stage generated artwork in .temp; accept to save artist images and missing audio covers.",
-  description: "生成图片暂存于 .temp；Accept 后保存歌手图片和缺失的音频封面",
-  progressMessage: "正在生成歌手图片并准备待审核封面…",
+  descriptionKey: "commands.imageGeneration.description",
+  progressKey: "commands.imageGeneration.progress",
   execute: executeImageGeneration,
 };
 
 export const imageCommand: ChatCommand = {
   name: "/image",
-  descriptionEn: "Download missing artwork for organised artist folders; review and accept embedded cover changes.",
-  description: "为已整理的歌手目录下载缺失图片；音频封面需人工 Accept",
-  progressMessage: "正在查询并下载缺失图片…",
+  descriptionKey: "commands.image.description",
+  progressKey: "commands.image.progress",
   execute: executeImage,
 };

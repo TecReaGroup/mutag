@@ -1,3 +1,5 @@
+import type { Language } from "../../shared/localization";
+
 export interface ModelConfig {
   baseURL: string;
   apiKey: string;
@@ -12,7 +14,7 @@ export interface ModelConfig {
 
 export interface MutagConfig {
   disabledCommands?: string[];
-  language?: "en" | "zh-CN";
+  language?: Language;
   models?: ModelConfig[];
   lastFolder: string;
   openAI: ModelConfig;

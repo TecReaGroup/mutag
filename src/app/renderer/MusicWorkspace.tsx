@@ -18,18 +18,23 @@ import { IconButton } from "../../shared/renderer/controls";
 import { ErrorNotice } from "../../shared/renderer/ErrorNotice";
 import { ResizeDivider } from "../../shared/renderer/ResizeDivider";
 import { Tabs } from "../../shared/renderer/Tabs";
+import { LocalizationProvider, useTranslation } from "../../shared/renderer/LocalizationProvider";
 import { CHAT_COMMANDS, resolveChatCommand } from "./chat-commands";
 
 const INITIAL_FILES = import.meta.env.DEV ? DEMO_FILES : [];
 
 /** Compose feature-owned state and panels into the desktop workspace. */
 export function MusicWorkspace() {
+  const preferences = usePreferences();
+  return <LocalizationProvider language={preferences.config.language ?? "en"}><WorkspacePanels preferences={preferences} /></LocalizationProvider>;
+}
+
+/** Compose the workspace beneath the shared localization boundary. */
+function WorkspacePanels({ preferences }: { preferences: ReturnType<typeof usePreferences> }) {
   const [showSettings, setShowSettings] = useState(false);
   const [rightTab, setRightTab] = useState("pending");
-  const preferences = usePreferences();
   const { config } = preferences;
-  const language = config.language ?? "en";
-  const t = (english: string, chinese: string) => language === "zh-CN" ? chinese : english;
+  const { t } = useTranslation();
   const session = useLibrarySession(INITIAL_FILES, preferences.loaded, preferences.initialFolder, preferences.setLastFolder);
   const disabledCommands = config.disabledCommands ?? [];
   const enabledCommands = CHAT_COMMANDS.filter((command) => !disabledCommands.includes(command.name));
@@ -45,24 +50,24 @@ export function MusicWorkspace() {
   const navigation = useFileNavigation(session.files, session.selectedId, session.setSelectedId, fileOperationBusy || session.scanning || showSettings);
   const selectedFile = session.files.find((file) => file.id === session.selectedId);
   const defaultKeys = config.audioTag.defaultFieldKeys;
-  const describeFields = (file: AudioFile) => fieldsForFile(file, defaultKeys, editing.extraKeys, language);
+  const describeFields = (file: AudioFile) => fieldsForFile(file, defaultKeys, editing.extraKeys, t);
   const selectedFields = selectedFile ? describeFields(selectedFile) : [];
-  const availableFields = knownTagFields(language).filter((field) => !selectedFields.some((selected) => selected.key === field.key));
+  const availableFields = knownTagFields(t).filter((field) => !selectedFields.some((selected) => selected.key === field.key));
   const dirtyFiles = session.files.filter(hasTagChanges);
 
-  if (showSettings) return <SettingsPage commands={CHAT_COMMANDS} disabledCommands={disabledCommands} onDisabledCommandsChange={preferences.setDisabledCommands} language={language} onLanguageChange={preferences.setLanguage} defaultKeys={defaultKeys} onDefaultKeysChange={preferences.setDefaultKeys} models={config.models ?? []} activeModel={config.openAI} onModelsChange={preferences.setModels} disabled={fileOperationBusy} onBack={() => setShowSettings(false)} t={t} />;
+  if (showSettings) return <SettingsPage commands={CHAT_COMMANDS} disabledCommands={disabledCommands} onDisabledCommandsChange={preferences.setDisabledCommands} onLanguageChange={preferences.setLanguage} defaultKeys={defaultKeys} onDefaultKeysChange={preferences.setDefaultKeys} models={config.models ?? []} activeModel={config.openAI} onModelsChange={preferences.setModels} disabled={fileOperationBusy} onBack={() => setShowSettings(false)} />;
 
   return <main className="ui-page-enter flex h-screen w-full overflow-hidden border-t border-border bg-background">
     <aside className="relative flex shrink-0 flex-col bg-surface" style={{ width: config.layout.leftW }}>
-      <AudioFileList files={session.files} selectedId={session.selectedId} onSelect={session.setSelectedId} onOpenFolder={() => { if (!fileOperationBusy && !conversation.sending) void session.openFolder(persistence.flush); }} scanning={session.scanning} disabled={fileOperationBusy || conversation.sending} t={t} />
-      <IconButton title={t("Settings", "设置")} onClick={() => setShowSettings(true)} disabled={fileOperationBusy} className="absolute bottom-3 left-3 rounded-full border-border shadow-sm"><Settings size={14} /></IconButton>
+      <AudioFileList files={session.files} selectedId={session.selectedId} onSelect={session.setSelectedId} onOpenFolder={() => { if (!fileOperationBusy && !conversation.sending) void session.openFolder(persistence.flush); }} scanning={session.scanning} disabled={fileOperationBusy || conversation.sending} />
+      <IconButton title={t("common.settings")} onClick={() => setShowSettings(true)} disabled={fileOperationBusy} className="absolute bottom-3 left-3 rounded-full border-border shadow-sm"><Settings size={14} /></IconButton>
     </aside>
-    <ResizeDivider label={t("Resize file panel", "调整文件面板宽度")} onDrag={preferences.resizeLeft} />
-    <TagEditor file={selectedFile} fields={selectedFields} availableFields={availableFields} defaultKeys={defaultKeys} scanning={session.scanning} disabled={fileOperationBusy} previousAvailable={navigation.previousAvailable} nextAvailable={navigation.nextAvailable} error={editing.error} onDismissError={editing.dismissError} onChange={editing.updateField} onAdd={editing.addField} onSave={editing.saveSelected} onDiscard={editing.discardSelected} onPrevious={navigation.previous} onNext={navigation.next} onImport={editing.importImage} onExport={editing.exportImage} t={t} />
-    <ResizeDivider label={t("Resize activity panel", "调整活动面板宽度")} onDrag={preferences.resizeRight} />
+    <ResizeDivider label={t("workspace.resizeFiles")} onDrag={preferences.resizeLeft} />
+    <TagEditor file={selectedFile} fields={selectedFields} availableFields={availableFields} defaultKeys={defaultKeys} scanning={session.scanning} disabled={fileOperationBusy} previousAvailable={navigation.previousAvailable} nextAvailable={navigation.nextAvailable} error={editing.error} onDismissError={editing.dismissError} onChange={editing.updateField} onAdd={editing.addField} onSave={editing.saveSelected} onDiscard={editing.discardSelected} onPrevious={navigation.previous} onNext={navigation.next} onImport={editing.importImage} onExport={editing.exportImage} />
+    <ResizeDivider label={t("workspace.resizeActivity")} onDrag={preferences.resizeRight} />
     <aside className="flex shrink-0 flex-col bg-surface" style={{ width: config.layout.rightW }}>
-      <Tabs label={t("Activity", "活动")} tabs={[{ key: "pending", label: t("Pending", "待保存") }, { key: "chat", label: t("Chat", "对话") }]} selectedKey={rightTab} onChange={setRightTab} disabled={fileOperationBusy}>
-        {rightTab === "pending" ? <PendingChanges files={dirtyFiles} selectedId={session.selectedId} fieldsForFile={describeFields} onSelect={session.setSelectedId} onSaveAll={editing.saveAll} onDiscardAll={editing.discardAll} progress={editing.progress} disabled={fileOperationBusy} scanning={session.scanning} t={t} /> : <ChatPanel messages={session.messages} input={conversation.input} onInput={conversation.setInput} sending={conversation.sending} activeCommand={conversation.activeCommand} error={conversation.error} onSend={() => { if (!fileOperationBusy && !session.scanning) void conversation.send(); }} onStop={conversation.stop} onClear={conversation.clear} models={config.models ?? []} activeModel={config.openAI} onModelChange={preferences.selectModel} commands={enabledCommands} fileCount={session.files.length} dirtyCount={dirtyFiles.length} disabled={fileOperationBusy} scanning={session.scanning} t={t} />}
+      <Tabs label={t("workspace.activity")} tabs={[{ key: "pending", label: t("workspace.pending") }, { key: "chat", label: t("workspace.chat") }]} selectedKey={rightTab} onChange={setRightTab} disabled={fileOperationBusy}>
+        {rightTab === "pending" ? <PendingChanges files={dirtyFiles} selectedId={session.selectedId} fieldsForFile={describeFields} onSelect={session.setSelectedId} onSaveAll={editing.saveAll} onDiscardAll={editing.discardAll} progress={editing.progress} disabled={fileOperationBusy} scanning={session.scanning} /> : <ChatPanel messages={session.messages} input={conversation.input} onInput={conversation.setInput} sending={conversation.sending} activeCommand={conversation.activeCommand} error={conversation.error} onSend={() => { if (!fileOperationBusy && !session.scanning) void conversation.send(); }} onStop={conversation.stop} onClear={conversation.clear} models={config.models ?? []} activeModel={config.openAI} onModelChange={preferences.selectModel} commands={enabledCommands} fileCount={session.files.length} dirtyCount={dirtyFiles.length} disabled={fileOperationBusy} scanning={session.scanning} />}
       </Tabs>
     </aside>
     {(preferences.error || session.error || persistence.error) && <div className="fixed bottom-16 left-4 right-4 z-30"><ErrorNotice message={preferences.error ?? session.error ?? persistence.error!} /></div>}

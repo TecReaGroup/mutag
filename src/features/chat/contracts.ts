@@ -5,8 +5,8 @@ export interface ChatMessage {
 
 export interface ChatCommand<Context, Outcome> {
   name: string;
-  description: string;
-  descriptionEn: string;
-  progressMessage: string;
+  descriptionKey: StaticTranslationKey;
+  progressKey: StaticTranslationKey;
   execute: (context: Context) => Promise<Outcome>;
 }
+import type { StaticTranslationKey } from "../../shared/localization";

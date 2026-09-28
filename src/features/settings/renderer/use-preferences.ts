@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ModelConfig, MutagConfig } from "../contracts";
-import type { Language } from "../../../shared/renderer/localization";
+import type { Language } from "../../../shared/localization";
 import { DEFAULT_FIELD_KEYS, normalizeTagKey } from "../../audio-tags/renderer/tag-fields";
 import { DEFAULT_LAYOUT, DEFAULT_MODEL, normalizeModel } from "./model-config";
 
@@ -45,7 +45,6 @@ export function usePreferences() {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => { document.documentElement.lang = config.language ?? "en"; }, [config.language]);
   useEffect(() => {
     if (!loaded || restorationFailed.current || !window.audioTagApi) return;
     const api = window.audioTagApi;

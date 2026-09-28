@@ -3,7 +3,7 @@ import type { ChatCommand, ChatCommandContext, ChatCommandOutcome } from "../com
 /** Save the current project, organise its files, and reconcile moved paths. */
 async function executeOrganise(context: ChatCommandContext): Promise<ChatCommandOutcome> {
   const api = window.audioTagApi;
-  if (!api || !context.projectRoot) throw new Error("请先打开需要整理的音乐目录。");
+  if (!api || !context.projectRoot) throw new Error(context.t("commands.openOrganiseFolder"));
   await api.saveProjectState(context.projectRoot, {
     selectedId: context.selectedId,
     files: Object.fromEntries(context.files.map((file) => [file.id, { tempTags: file.tempTags }])),
@@ -23,8 +23,7 @@ async function executeOrganise(context: ChatCommandContext): Promise<ChatCommand
 
 export const organiseCommand: ChatCommand = {
   name: "/organise",
-  descriptionEn: "Organise audio files by artist and title when sent.",
-  description: "按歌手和歌名重新组织音频文件；发送后执行",
-  progressMessage: "正在重新组织音频文件…",
+  descriptionKey: "commands.organise.description",
+  progressKey: "commands.organise.progress",
   execute: executeOrganise,
 };

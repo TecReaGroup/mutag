@@ -1,5 +1,5 @@
 import type { AudioFile, AudioTag } from "../contracts";
-import type { Language } from "../../../shared/renderer/localization";
+import type { Translate, StaticTranslationKey } from "../../../shared/localization";
 import { normalizeTagKey } from "../tag-rules.js";
 export { normalizeTagKey } from "../tag-rules.js";
 
@@ -7,15 +7,12 @@ export interface TagField { key: string; label: string }
 export type DiffStatus = "unchanged" | "modified" | "added" | "deleted";
 
 export const DEFAULT_FIELD_KEYS = ["image", "title", "artist", "album", "year", "genre", "comment", "lyrics"];
-const TAG_LABELS: Record<string, string> = {
-  image: "Album cover", title: "Title", artist: "Artist", album: "Album", year: "Year", genre: "Genre", bpm: "BPM", comment: "Comment", lyrics: "Lyrics",
-  album_artist: "Album Artist", composer: "Composer", track_number: "Track Number", track_total: "Track Total", disc_number: "Disc Number", disc_total: "Disc Total",
-  subtitle: "Subtitle", description: "Description", grouping: "Grouping", copyright: "Copyright", conductor: "Conductor", remixedby: "Remixed By", publisher: "Publisher", isrc: "ISRC", initial_key: "Initial Key",
-  musicbrainz_artist_id: "MusicBrainz Artist ID", musicbrainz_album_id: "MusicBrainz Album ID", musicbrainz_albumartist_id: "MusicBrainz Album Artist ID", musicbrainz_track_id: "MusicBrainz Track ID",
-  musicbrainz_release_group_id: "MusicBrainz Release Group ID", musicbrainz_disc_id: "MusicBrainz Disc ID", musicbrainz_release_status: "MusicBrainz Release Status", musicbrainz_release_type: "MusicBrainz Release Type", musicbrainz_release_country: "MusicBrainz Release Country", musicip_id: "MusicIP ID", amazon_id: "Amazon ID",
-};
-const CHINESE_TAG_LABELS: Record<string, string> = {
-  title: "歌名", artist: "歌手", album: "专辑", album_artist: "专辑歌手", genre: "流派", year: "年份", track_number: "音轨", track_total: "总音轨数", disc_number: "碟号", disc_total: "总碟数", composer: "作曲", comment: "备注", lyrics: "歌词", image: "封面", bpm: "节拍", copyright: "版权", publisher: "发行方",
+const TAG_LABEL_KEYS: Record<string, StaticTranslationKey> = {
+  image: "fields.image", title: "fields.title", artist: "fields.artist", album: "fields.album", year: "fields.year", genre: "fields.genre", bpm: "fields.bpm", comment: "fields.comment", lyrics: "fields.lyrics",
+  album_artist: "fields.album_artist", composer: "fields.composer", track_number: "fields.track_number", track_total: "fields.track_total", disc_number: "fields.disc_number", disc_total: "fields.disc_total",
+  subtitle: "fields.subtitle", description: "fields.description", grouping: "fields.grouping", copyright: "fields.copyright", conductor: "fields.conductor", remixedby: "fields.remixedby", publisher: "fields.publisher", isrc: "fields.isrc", initial_key: "fields.initial_key",
+  musicbrainz_artist_id: "fields.musicbrainz_artist_id", musicbrainz_album_id: "fields.musicbrainz_album_id", musicbrainz_albumartist_id: "fields.musicbrainz_albumartist_id", musicbrainz_track_id: "fields.musicbrainz_track_id",
+  musicbrainz_release_group_id: "fields.musicbrainz_release_group_id", musicbrainz_disc_id: "fields.musicbrainz_disc_id", musicbrainz_release_status: "fields.musicbrainz_release_status", musicbrainz_release_type: "fields.musicbrainz_release_type", musicbrainz_release_country: "fields.musicbrainz_release_country", musicip_id: "fields.musicip_id", amazon_id: "fields.amazon_id",
 };
 
 export const DIFF_STYLES: Record<DiffStatus, { field: string; badge: string; label: string }> = {
@@ -26,12 +23,12 @@ export const DIFF_STYLES: Record<DiffStatus, { field: string; badge: string; lab
 };
 
 export function getTagValue(tags: AudioTag, key: string): string { return tags[normalizeTagKey(key)] ?? tags[key] ?? ""; }
-export function tagLabel(key: string, language: Language): string {
+export function tagLabel(key: string, t: Translate): string {
   const normalized = normalizeTagKey(key);
-  return (language === "zh-CN" ? CHINESE_TAG_LABELS[normalized] : undefined) ?? TAG_LABELS[normalized] ?? normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return Object.hasOwn(TAG_LABEL_KEYS, normalized) ? t(TAG_LABEL_KEYS[normalized]) : normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
-export function knownTagFields(language: Language): TagField[] {
-  return Object.keys(TAG_LABELS).map((key) => ({ key, label: tagLabel(key, language) }));
+export function knownTagFields(t: Translate): TagField[] {
+  return Object.keys(TAG_LABEL_KEYS).map((key) => ({ key, label: tagLabel(key, t) }));
 }
 export function fieldStatus(original: string, edited: string): DiffStatus {
   if (original !== "" && edited === "") return "deleted";
@@ -44,12 +41,12 @@ export function hasTagChanges(file: AudioFile): boolean {
 }
 
 /** Preserve configured ordering and append populated or explicitly added fields. */
-export function fieldsForFile(file: AudioFile, defaults: string[], extraKeys: string[], language: Language): TagField[] {
+export function fieldsForFile(file: AudioFile, defaults: string[], extraKeys: string[], t: Translate): TagField[] {
   const keys = new Set(defaults.map(normalizeTagKey));
   for (const rawKey of Object.keys({ ...file.savedTags, ...file.tempTags })) {
     const key = normalizeTagKey(rawKey);
     if (getTagValue(file.savedTags, key) || getTagValue(file.tempTags ?? file.savedTags, key)) keys.add(key);
   }
   extraKeys.forEach((key) => keys.add(normalizeTagKey(key)));
-  return Array.from(keys, (key) => ({ key, label: tagLabel(key, language) }));
+  return Array.from(keys, (key) => ({ key, label: tagLabel(key, t) }));
 }
