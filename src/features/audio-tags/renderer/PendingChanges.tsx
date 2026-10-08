@@ -17,7 +17,7 @@ export function PendingChanges({ files, selectedId, fieldsForFile, onSelect, onS
           const status = fieldStatus(getTagValue(file.savedTags, field.key), getTagValue(file.tempTags ?? file.savedTags, field.key));
           if (status === "unchanged") return null;
           return <span key={field.key} className="flex items-center gap-1 text-[10px]"><span className={`font-bold ${DIFF_STYLES[status].badge}`}>{DIFF_STYLES[status].label}</span><span className="text-muted-foreground">{field.label}</span></span>;
-        })}{file.pendingArtwork && <span className="block text-[10px] text-success-hover">A {t("pending.artwork")} · {file.pendingArtwork.filenames.join(" / ")}</span>}</span>
+        })}</span>
       </button>)}
     </div>
     <div className="flex shrink-0 gap-2 border-t border-border p-2"><Button className="ui-save-button flex-1 px-2" onClick={onSaveAll} disabled={!files.length || disabled || scanning}>{progress ? t("pending.saving", progress) : t("pending.saveAll")}</Button><Button className="flex-1 px-2" onClick={onDiscardAll} disabled={!files.length || disabled || scanning}>{t("pending.discardAll")}</Button></div>

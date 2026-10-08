@@ -8,9 +8,9 @@ function proposeCovers(context: ChatCommandContext, artwork: ArtworkOutcome): Ch
   return {
     files: context.files.map((file) => {
       const pendingArtwork = proposals.get(file.path);
-      const image = images.get(file.path) ?? (pendingArtwork?.filenames.includes("cover.jpg") ? pendingArtwork.image : undefined);
+      const image = pendingArtwork?.image ?? images.get(file.path);
       const proposedFile = pendingArtwork ? { ...file, pendingArtwork } : file;
-      return image && !file.savedTags.image && !(file.tempTags ?? file.savedTags).image
+      return image && (pendingArtwork || (!file.savedTags.image && !(file.tempTags ?? file.savedTags).image))
         ? { ...proposedFile, tempTags: { ...(file.tempTags ?? file.savedTags), image } } : proposedFile;
     }),
     selectedId: context.selectedId,

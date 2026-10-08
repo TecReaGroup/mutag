@@ -34,11 +34,10 @@ async function readProposal(audioPath, token) {
   return { prefix, artistDirectory, filenames: proposal.filenames };
 }
 
-/** Accept directory artwork and missing embedded cover as one review operation. */
+/** Accept directory artwork and reviewed tags as one operation. */
 export async function acceptArtwork(audioPath, tags, token) {
   const proposal = await readProposal(audioPath, token);
   const currentTags = readTags(audioPath);
-  const jpeg = await fs.readFile(`${proposal.prefix}.jpg`);
   for (const filename of proposal.filenames) {
     const destination = path.join(proposal.artistDirectory, filename);
     try {
@@ -49,11 +48,6 @@ export async function acceptArtwork(audioPath, tags, token) {
     }
   }
   const acceptedTags = { ...tags };
-  if (currentTags.image) acceptedTags.image = currentTags.image;
-  else if (tags.image === `data:image/jpeg;base64,${jpeg.toString("base64")}`) {
-    const cover = await fs.readFile(path.join(proposal.artistDirectory, "cover.jpg"));
-    acceptedTags.image = `data:image/jpeg;base64,${cover.toString("base64")}`;
-  }
   const saved = Object.keys(acceptedTags).some((key) => acceptedTags[key] !== currentTags[key])
     ? await writeTags(audioPath, acceptedTags)
     : { ok: true, tags: currentTags, path: audioPath, name: path.basename(audioPath) };
