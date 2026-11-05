@@ -1,6 +1,21 @@
 import type { TranslationCatalog } from "./index";
 
 export const ZH_CN = {
+  "library.switch": "切换文件库",
+  "video.title": "视频文件",
+  "video.tags": "视频标签",
+  "video.noFiles": "未找到视频文件",
+  "video.search": "搜索视频文件",
+  "video.titleField": "标题",
+  "video.creator": "创作者",
+  "video.album": "专辑",
+  "video.cover": "封面",
+  "video.working": "处理中…",
+  "video.formats": "支持 MP4、M4V、WMV、ASF、AVI、DIVX；封面支持 JPEG / PNG。",
+  "video.chooseFolder": "打开文件夹以读取和编辑视频标签（最多扫描 5 层目录）。",
+  "video.replaceDrafts": "打开其他文件夹将丢弃尚未保存的视频修改，是否继续？",
+  "video.desktopRequired": "视频编辑需要在桌面应用中使用。",
+  "video.failed": "视频操作失败。",
   "common.settings": "设置",
   "common.back": "返回",
   "common.close": "关闭",

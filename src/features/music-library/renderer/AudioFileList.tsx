@@ -4,10 +4,12 @@ import type { AudioFile } from "../../audio-tags/contracts";
 import { hasTagChanges } from "../../audio-tags/renderer/tag-fields";
 import { IconButton, PanelHeader, SkeletonLine } from "../../../shared/renderer/controls";
 import { useTranslation } from "../../../shared/renderer/LocalizationProvider";
+import { LibrarySelector, type LibraryKind } from "../../../shared/renderer/LibrarySelector";
 
-export function AudioFileList({ files, selectedId, onSelect, onOpenFolder, scanning, disabled }: {
+export function AudioFileList({ files, selectedId, onSelect, onOpenFolder, scanning, disabled, onLibraryChange }: {
   files: AudioFile[]; selectedId: string; onSelect: (id: string) => void; onOpenFolder: () => void;
   scanning: boolean; disabled: boolean;
+  onLibraryChange: (kind: LibraryKind) => void;
 }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
@@ -16,7 +18,7 @@ export function AudioFileList({ files, selectedId, onSelect, onOpenFolder, scann
   const visibleFiles = files.filter((file) => terms.every((term) => file.name.toLowerCase().includes(term)));
   useEffect(() => { selectedRef.current?.scrollIntoView({ block: "nearest" }); }, [selectedId]);
   return <>
-    <PanelHeader><span className="ui-field-label">{t("library.title")}</span><IconButton title={t("library.openFolder")} onClick={onOpenFolder} disabled={scanning || disabled} className="ml-auto"><FolderOpen size={14} /></IconButton></PanelHeader>
+    <PanelHeader><span className="ui-field-label">{t("library.title")}</span><LibrarySelector selected="audio" onChange={onLibraryChange} disabled={scanning || disabled} /><IconButton title={t("library.openFolder")} onClick={onOpenFolder} disabled={scanning || disabled} className="ml-auto"><FolderOpen size={14} /></IconButton></PanelHeader>
     <PanelHeader className="bg-background"><span className="shrink-0 text-[10px] text-subtle">{scanning ? t("library.scanning") : query.trim() ? t("library.filteredCount", { count: visibleFiles.length, total: files.length }) : t("library.itemCount", { count: visibleFiles.length })}</span><input aria-label={t("library.searchLabel")} className="ui-input min-w-0 flex-1" value={query} onChange={(event) => setQuery(event.target.value)} disabled={scanning || disabled} placeholder={t("library.search")} /></PanelHeader>
     <div className="min-h-0 flex-1 overflow-y-auto pb-12 pt-1">
       {scanning ? <div className="space-y-3 p-3">{Array.from({ length: 8 }, (_, index) => <div key={index} className="space-y-2"><SkeletonLine className="h-3 w-4/5" /><SkeletonLine className="h-2 w-10" /></div>)}</div> : visibleFiles.map((file) => <button

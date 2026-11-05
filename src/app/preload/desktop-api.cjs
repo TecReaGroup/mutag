@@ -2,6 +2,12 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 /** Expose only the audio workspace operations to the renderer. */
 function exposeDesktopApi() {
+  contextBridge.exposeInMainWorld("videoTagApi", {
+    openFolder: () => ipcRenderer.invoke("video-tags:open-folder"),
+    saveTags: (path, tags) => ipcRenderer.invoke("video-tags:save", { path, tags }),
+    importImage: () => ipcRenderer.invoke("video-tags:import-image"),
+    exportImage: (path) => ipcRenderer.invoke("video-tags:export-image", { path }),
+  });
   contextBridge.exposeInMainWorld("audioTagApi", {
     logEvent: (level, module, message) => ipcRenderer.send("app:log-event", { level, module, message }),
     openFolder: () => ipcRenderer.invoke("audio-tags:open-folder"),

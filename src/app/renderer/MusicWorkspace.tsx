@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { VideoWorkspace } from "../../features/video-tags/renderer/VideoWorkspace";
+import type { LibraryKind } from "../../shared/renderer/LibrarySelector";
 import { Settings } from "lucide-react";
 import type { AudioFile } from "../../features/audio-tags/contracts";
 import { TagEditor } from "../../features/audio-tags/renderer/TagEditor";
@@ -31,6 +33,7 @@ export function MusicWorkspace() {
 
 /** Compose the workspace beneath the shared localization boundary. */
 function WorkspacePanels({ preferences }: { preferences: ReturnType<typeof usePreferences> }) {
+  const [library, setLibrary] = useState<LibraryKind>("audio");
   const [showSettings, setShowSettings] = useState(false);
   const [rightTab, setRightTab] = useState("pending");
   const { config } = preferences;
@@ -47,7 +50,7 @@ function WorkspacePanels({ preferences }: { preferences: ReturnType<typeof usePr
     chatMessages: session.messages,
   }), [session.selectedId, session.files, session.messages]);
   const persistence = useProjectPersistence(session.root, projectState, preferences.loaded && !session.scanning && !conversation.activeCommand);
-  const navigation = useFileNavigation(session.files, session.selectedId, session.setSelectedId, fileOperationBusy || session.scanning || showSettings);
+  const navigation = useFileNavigation(session.files, session.selectedId, session.setSelectedId, fileOperationBusy || session.scanning || showSettings || library !== "audio");
   const selectedFile = session.files.find((file) => file.id === session.selectedId);
   const defaultKeys = config.audioTag.defaultFieldKeys;
   const describeFields = (file: AudioFile) => fieldsForFile(file, defaultKeys, editing.extraKeys, t);
@@ -55,11 +58,11 @@ function WorkspacePanels({ preferences }: { preferences: ReturnType<typeof usePr
   const availableFields = knownTagFields(t).filter((field) => !selectedFields.some((selected) => selected.key === field.key));
   const dirtyFiles = session.files.filter(hasTagChanges);
 
-  if (showSettings) return <SettingsPage commands={CHAT_COMMANDS} disabledCommands={disabledCommands} onDisabledCommandsChange={preferences.setDisabledCommands} onLanguageChange={preferences.setLanguage} defaultKeys={defaultKeys} onDefaultKeysChange={preferences.setDefaultKeys} models={config.models ?? []} activeModel={config.openAI} onModelsChange={preferences.setModels} disabled={fileOperationBusy} onBack={() => setShowSettings(false)} />;
+  const settingsPage = showSettings ? <SettingsPage commands={CHAT_COMMANDS} disabledCommands={disabledCommands} onDisabledCommandsChange={preferences.setDisabledCommands} onLanguageChange={preferences.setLanguage} defaultKeys={defaultKeys} onDefaultKeysChange={preferences.setDefaultKeys} models={config.models ?? []} activeModel={config.openAI} onModelsChange={preferences.setModels} disabled={fileOperationBusy} onBack={() => setShowSettings(false)} /> : null;
 
-  return <main className="ui-page-enter flex h-screen w-full overflow-hidden border-t border-border bg-background">
+  return <>{settingsPage}<div hidden={showSettings || library !== "video"}><VideoWorkspace onLibraryChange={setLibrary} active={!showSettings && library === "video"} layout={config.layout} onResizeLeft={preferences.resizeLeft} onResizeRight={preferences.resizeRight} /></div><div hidden={showSettings || library !== "audio"}><main className="ui-page-enter flex h-screen w-full overflow-hidden border-t border-border bg-background">
     <aside className="relative flex shrink-0 flex-col bg-surface" style={{ width: config.layout.leftW }}>
-      <AudioFileList files={session.files} selectedId={session.selectedId} onSelect={session.setSelectedId} onOpenFolder={() => { if (!fileOperationBusy && !conversation.sending) void session.openFolder(persistence.flush); }} scanning={session.scanning} disabled={fileOperationBusy || conversation.sending} />
+      <AudioFileList onLibraryChange={setLibrary} files={session.files} selectedId={session.selectedId} onSelect={session.setSelectedId} onOpenFolder={() => { if (!fileOperationBusy && !conversation.sending) void session.openFolder(persistence.flush); }} scanning={session.scanning} disabled={fileOperationBusy || conversation.sending} />
       <IconButton title={t("common.settings")} onClick={() => setShowSettings(true)} disabled={fileOperationBusy} className="absolute bottom-3 left-3 rounded-full border-border shadow-sm"><Settings size={14} /></IconButton>
     </aside>
     <ResizeDivider label={t("workspace.resizeFiles")} onDrag={preferences.resizeLeft} />
@@ -71,5 +74,5 @@ function WorkspacePanels({ preferences }: { preferences: ReturnType<typeof usePr
       </Tabs>
     </aside>
     {(preferences.error || session.error || persistence.error) && <div className="fixed bottom-16 left-4 right-4 z-30"><ErrorNotice message={preferences.error ?? session.error ?? persistence.error!} /></div>}
-  </main>;
+  </main></div></>;
 }

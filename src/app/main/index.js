@@ -1,4 +1,5 @@
 import path from "node:path";
+import { registerVideoIpc } from "../../features/video-tags/main/register-video-ipc.js";
 import { createRequire } from "node:module";
 import { registerAudioTagIpc } from "../../features/audio-tags/main/register-audio-tag-ipc.js";
 import { registerLibraryIpc } from "../../features/music-library/main/register-library-ipc.js";
@@ -51,6 +52,7 @@ function createWindow() {
 }
 
 registerAudioTagIpc();
+registerVideoIpc();
 registerLibraryIpc();
 registerSettingsIpc();
 registerArtworkIpc();
