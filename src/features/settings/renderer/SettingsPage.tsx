@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
-import type { ModelConfig } from "../contracts";
+import type { ModelConfig, WebdavConfig } from "../contracts";
 import { Button, PanelHeader } from "../../../shared/renderer/controls";
 import { SelectField } from "../../../shared/renderer/SelectField";
 import { LANGUAGE_OPTIONS } from "../../../shared/localization";
@@ -9,6 +9,7 @@ import { useTranslation } from "../../../shared/renderer/LocalizationProvider";
 import { DefaultFieldSettings } from "./DefaultFieldSettings";
 import { ModelSettings } from "./ModelSettings";
 import { CommandSettings } from "./CommandSettings";
+import { SyncSettings } from "./SyncSettings";
 import type { ChatCommand } from "../../music-library/command-contracts";
 
 interface SettingsPageProps {
@@ -16,13 +17,14 @@ interface SettingsPageProps {
   onLanguageChange: (language: Language) => void;
   defaultKeys: string[]; onDefaultKeysChange: (keys: string[]) => void;
   models: ModelConfig[]; activeModel: ModelConfig; onModelsChange: (models: ModelConfig[], active: ModelConfig) => void;
+  webdav: WebdavConfig; onWebdavChange: (webdav: WebdavConfig) => void; onUploadBackup: () => Promise<unknown>; onRestoreBackup: () => Promise<void>;
   disabled: boolean; onBack: () => void;
 }
 
-export function SettingsPage({ commands, disabledCommands, onDisabledCommandsChange, onLanguageChange, defaultKeys, onDefaultKeysChange, models, activeModel, onModelsChange, disabled, onBack }: SettingsPageProps) {
+export function SettingsPage({ commands, disabledCommands, onDisabledCommandsChange, onLanguageChange, defaultKeys, onDefaultKeysChange, models, activeModel, onModelsChange, webdav, onWebdavChange, onUploadBackup, onRestoreBackup, disabled, onBack }: SettingsPageProps) {
   const { language, t } = useTranslation();
   const [category, setCategory] = useState("audio-tag");
-  const categories = [{ key: "audio-tag", label: t("settings.audioTags") }, { key: "openai", label: "LLM" }, { key: "commands", label: t("settings.commands") }, { key: "language", label: t("settings.language") }];
+  const categories = [{ key: "audio-tag", label: t("settings.audioTags") }, { key: "openai", label: "LLM" }, { key: "commands", label: t("settings.commands") }, { key: "sync", label: t("settings.sync") }, { key: "language", label: t("settings.language") }];
   return <div className="ui-page-enter flex h-screen flex-col overflow-hidden border-t border-border bg-background">
     <PanelHeader className="bg-surface"><Button onClick={onBack} disabled={disabled}><ArrowLeft size={14} />{t("common.back")}</Button><span className="ui-field-label">{t("common.settings")}</span></PanelHeader>
     <div className="flex min-h-0 flex-1">
@@ -32,6 +34,7 @@ export function SettingsPage({ commands, disabledCommands, onDisabledCommandsCha
         {category === "language" && <div className="max-w-2xl space-y-3"><h2 className="text-sm">{t("settings.language")}</h2><SelectField label={t("settings.language")} selectedKey={language} options={LANGUAGE_OPTIONS} onChange={onLanguageChange} disabled={disabled} className="w-full" /><p className="ui-description">{t("settings.autoSave")}</p></div>}
         {category === "audio-tag" && <DefaultFieldSettings keys={defaultKeys} onChange={onDefaultKeysChange} />}
         {category === "openai" && <ModelSettings models={models} activeModel={activeModel} onChange={onModelsChange} />}
+        {category === "sync" && <SyncSettings webdav={webdav} onChange={onWebdavChange} onUpload={onUploadBackup} onRestore={onRestoreBackup} />}
       </fieldset>
     </div>
   </div>;

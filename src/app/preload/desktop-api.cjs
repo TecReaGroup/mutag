@@ -19,6 +19,8 @@ function exposeDesktopApi() {
     generateLyrics: (root, openAI, paths) => ipcRenderer.invoke("audio-tags:generate-lyrics", { root, openAI, paths }),
     loadConfig: () => ipcRenderer.invoke("audio-tags:load-config"),
     saveConfig: (config) => ipcRenderer.invoke("audio-tags:save-config", config),
+    uploadConfigBackup: (webdav, backup) => ipcRenderer.invoke("settings:upload-config-backup", { webdav, backup }),
+    downloadConfigBackup: (webdav) => ipcRenderer.invoke("settings:download-config-backup", webdav),
     saveProjectState: (root, state) =>
       ipcRenderer.invoke("audio-tags:save-project-state", { root, state }),
     saveTags: (path, tags) =>

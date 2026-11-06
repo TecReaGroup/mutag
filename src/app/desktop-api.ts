@@ -1,6 +1,6 @@
 import type { AudioTag, SaveTagsResult } from "../features/audio-tags/contracts";
 import type { ArtworkOutcome } from "../features/artwork/contracts";
-import type { ModelConfig, MutagConfig } from "../features/settings/contracts";
+import type { ConfigBackup, ModelConfig, MutagConfig, WebdavConfig } from "../features/settings/contracts";
 import type { MutagProjectState, OpenFolderResult, OrganiseLibraryResult } from "../features/music-library/contracts";
 
 export interface DesktopApi {
@@ -14,6 +14,8 @@ export interface DesktopApi {
   generateLyrics: (root: string, model: ModelConfig, paths: string[]) => Promise<{ updates: { path: string; lyrics: string }[]; messages: string[] }>;
   loadConfig: () => Promise<Partial<MutagConfig> | null>;
   saveConfig: (config: MutagConfig) => Promise<{ ok: true }>;
+  uploadConfigBackup: (webdav: WebdavConfig, backup: ConfigBackup) => Promise<{ ok: true; location: string }>;
+  downloadConfigBackup: (webdav: WebdavConfig) => Promise<Partial<MutagConfig>>;
   saveProjectState: (root: string, state: MutagProjectState) => Promise<{ ok: true }>;
   saveTags: (path: string, tags: AudioTag) => Promise<SaveTagsResult>;
   acceptArtwork: (path: string, tags: AudioTag, token: string) => Promise<SaveTagsResult>;
